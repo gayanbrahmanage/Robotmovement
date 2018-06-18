@@ -146,7 +146,7 @@ class TrajectoryPlotterNode
           ROS_INFO ("else");
           msg.angular.z = 0;
         }
-      }
+      }ddsjfhdsjkfdskjfdskjhfdkjshffjdshfdjsfjdsfjdjdsfdshfkjhdskjf
       else
       {
         if(it!=path.end())
