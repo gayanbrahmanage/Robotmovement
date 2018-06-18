@@ -212,6 +212,7 @@ include_directories(
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
+set (CMAKE_CXX_STANDARD 11)
 
 add_executable(drrobot_player src/drrobot_player.cpp)
 target_link_libraries(drrobot_player ${catkin_LIBRARIES})
@@ -225,3 +226,19 @@ target_link_libraries(drrobotMsgTester ${catkin_LIBRARIES})
 add_executable(drrobot_player_joystick src/drrobot_player_joystick.cpp)
 target_link_libraries(drrobot_player_joystick ${catkin_LIBRARIES})
 
+add_executable(drrobot_player_stock src/drrobot_player_stock.cpp)
+target_link_libraries(drrobot_player_stock ${catkin_LIBRARIES})
+
+add_executable(drrobot_player_velocity_controller src/drrobot_player_velocity_controller.cpp)
+target_link_libraries(drrobot_player_velocity_controller ${catkin_LIBRARIES})
+
+add_executable(drrobot_trajectory_plotter src/drrobot_trajectory_plotter.cpp)
+target_link_libraries(drrobot_trajectory_plotter ${catkin_LIBRARIES})
+
+#Noam added these
+add_dependencies(drrobot_player drrobot_jaguar4x4_player_generate_messages_cpp)
+add_dependencies(drrobot_player_manual drrobot_jaguar4x4_player_generate_messages_cpp)
+add_dependencies(drrobotMsgTester drrobot_jaguar4x4_player_generate_messages_cpp)
+add_dependencies(drrobot_player_joystick drrobot_jaguar4x4_player_generate_messages_cpp)
+add_dependencies(drrobot_player_stock drrobot_jaguar4x4_player_generate_messages_cpp)
+add_dependencies(drrobot_player_velocity_controller drrobot_jaguar4x4_player_generate_messages_cpp)

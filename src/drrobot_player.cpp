@@ -46,7 +46,7 @@ $ drrobot_jaguar4x4_player
 @section topic ROS topics
 
 Subscribes to (name/type):
-- @b "cmd_vel"/Twist : velocity commands to differentially drive the robot.
+- @b "cmd_DesPose"/DesiredPose : The desired pose of the robot
 - @b will develop other command subscribles in future, such as servo control.
 
 Publishes to (name / type):
@@ -76,6 +76,8 @@ Publishes to (name / type):
 - @b enable_ir (bool)  : Whether to enable sonar range sensors. Default: true.
 - @b enable_sonar (bool)  : Whether to enable IR range sensors. Default: true.
  */
+
+
 #include <iostream>
 #include <drrobot_jaguar4x4_player/Matrix.h>
 #include <drrobot_jaguar4x4_player/Eigen/Dense>
@@ -84,15 +86,16 @@ Publishes to (name / type):
 #include <boost/lexical_cast.hpp>
 #include <string>
 
+
+//Standard messages
 #include <sensor_msgs/JointState.h>
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
-
 #include <nav_msgs/Odometry.h>
-#include <geometry_msgs/Twist.h>
+#include "robot_move/DesiredPose.h" //custom message; used to be geometry_msgs/Twist but code was changed
 
-
+//More
 #include <std_msgs/Float64.h>
 #include <std_msgs/MultiArrayLayout.h>
 #include "std_msgs/MultiArrayDimension.h"
@@ -101,11 +104,12 @@ Publishes to (name / type):
 #include <sstream>  //added
 #include <drrobot_jaguar4x4_player/variable.h>  //added
 #include <drrobot_jaguar4x4_player/Rscanpose.h>  //added for save the scan plus encorder for EKF implemetation offline
-#include <drrobot_jaguar4x4_player/KFodom.h>  //added
 #include <nav_msgs/Path.h>
 #include <geometry_msgs/PoseStamped.h>
 #include "sensor_msgs/LaserScan.h"
 
+
+//DrRobot-specific messages
 #include <drrobot_jaguar4x4_player/MotorInfo.h>
 #include <drrobot_jaguar4x4_player/MotorInfoArray.h>
 #include <drrobot_jaguar4x4_player/RangeArray.h>
@@ -113,6 +117,8 @@ Publishes to (name / type):
 #include <drrobot_jaguar4x4_player/PowerInfo.h>
 #include <drrobot_jaguar4x4_player/StandardSensor.h>
 #include <drrobot_jaguar4x4_player/CustomSensor.h>
+
+//Driver
 #include <drrobot_jaguar4x4_player/DrRobotMotionSensorDriver.hpp>
 
 
@@ -122,7 +128,7 @@ Publishes to (name / type):
 #define US_NUM          6
 #define cFULL_COUNT				32767
 #define cWHOLE_RANGE			1200
-#define ENCODER_SCALAR_H20		0.00155		//1revoultion of wheel = .53m/400encoder readings//theoretical 0.001399055
+#define ENCODER_SCALAR_H20		0.00155		//revoultion of wheel = .53m/400encoder readings//theoretical 0.001399055
 #define TRACK					0.425				//Distance between two wheels(cm)
 
 
@@ -165,12 +171,11 @@ using namespace DrRobot_MotionSensorDriver;
 	
 	double deltaD=0;
 	double deltaTheta=0;
-	double thetaIntergral=0;
-	double velocity_angle=0;
-//----------------------------------------------------------------------
+//----------------------------`------------------------------------------
 	double Vx=0, Vy=0,Vz=0,Vxy=0,Vr=0,Wr=0; //word coordinate /robot coordinates frames
 	double  robotVx=0; //No robotVy
-	double Vcommand=0,command=0;
+	double Vcommand=0;
+	bool command=false;
 	
 	double f_w_left=0,f_w_right=0;
 	double w_left=0;
@@ -187,7 +192,7 @@ using namespace DrRobot_MotionSensorDriver;
 	double gvariable0=0;
 //----------------------------------------------------------------------
     int left_PWM=16384,right_PWM=16384;
-    int Wheel_1_velocity[3],Wheel_2_velocity[3];
+    int Wheel_1_velocity[3]= {0},Wheel_2_velocity[3]= {0};
     int W_left_wheel_error_I=0,W_right_wheel_error_I=0;
     int W_left_wheel_error_Previous=0,W_right_wheel_error_Previous=0;
     
@@ -218,14 +223,12 @@ public:
 	ros::Publisher odom_pub_;
 	ros::Publisher Rscanpose_publisher;
 	
-    ros::Subscriber cmd_vel_sub_;
-    ros::Subscriber cmd_DesiredPose_sub;
+    ros::Subscriber cmd_DesPose_sub;
     ros::Subscriber scan_sub;
     
 	ros::Publisher path_pub_;
 	ros::Publisher variable_publisher;
 	ros::Publisher encorder_publisher;
-	ros::Publisher KFodom_publisher;
 	
     ros::Subscriber new_cmd_sub_;
     std::string robot_prefix_;
@@ -251,7 +254,7 @@ public:
         private_nh.getParam("RobotID",robotID_);
         ROS_INFO("I get ROBOT_ID: [%s]", robotID_.c_str());
 
-        robotType_ = "Jaguar";
+        robotType_ = "Hawk_H20";
         private_nh.getParam("RobotType",robotType_);
         ROS_INFO("I get ROBOT_Type: [%s]", robotType_.c_str());
 
@@ -259,7 +262,7 @@ public:
         private_nh.getParam("RobotCommMethod",robotCommMethod_);
         ROS_INFO("I get ROBOT_CommMethod: [%s]", robotCommMethod_.c_str());
 
-        robotIP_ = "192.168.0.60";
+        robotIP_ = "192.168.0.95";
         private_nh.getParam("RobotBaseIP",robotIP_);
         ROS_INFO("I get ROBOT_IP: [%s]", robotIP_.c_str());
 
@@ -321,29 +324,8 @@ public:
           robotConfig2_.commMethod = Serial;
         }
 
-        if (robotType_ == "Jaguar")
-        {
-          robotConfig1_.boardType = Jaguar;
-        }
-        else if(robotType_ == "I90")
-        {
-          robotConfig1_.boardType = I90_Power;
-          robotConfig2_.boardType = I90_Motion;
-        }
-        else if (robotType_ == "Sentinel3")
-        {
-          robotConfig1_.boardType = Sentinel3_Power;
-          robotConfig2_.boardType = Sentinel3_Motion;
-        }
-        else if (robotType_ == "Hawk_H20")
-        {
-          robotConfig1_.boardType = Hawk_H20_Power;
-          robotConfig2_.boardType = Hawk_H20_Motion;
-        }
-        else if(robotType_ == "X80SV")
-        {
-          robotConfig1_.boardType = X80SV;
-        }
+        robotConfig1_.boardType = Hawk_H20_Power;
+        robotConfig2_.boardType = Hawk_H20_Motion;
 
         robotConfig1_.portNum = commPortNum_;
         robotConfig2_.portNum = commPortNum_ + 1;
@@ -370,19 +352,13 @@ public:
 		path_pub_ = node_.advertise<nav_msgs::Path>("path", 1000);
 		variable_publisher = node_.advertise<drrobot_jaguar4x4_player::variable>("variable", 1000);//added
 		encorder_publisher = node_.advertise<std_msgs::Int32MultiArray>("encorder", 1000);//added
-		KFodom_publisher = node_.advertise<drrobot_jaguar4x4_player::KFodom>("KFodom", 1000);//added	
 
         drrobotPowerDriver_ = new DrRobotMotionSensorDriver();
         drrobotMotionDriver_ = new DrRobotMotionSensorDriver();
-        if (  (robotType_ == "Jaguar") )
-        {
-          drrobotMotionDriver_->setDrRobotMotionDriverConfig(&robotConfig1_);
-        }
-        else
-        {
-          drrobotPowerDriver_->setDrRobotMotionDriverConfig(&robotConfig1_);
-          drrobotMotionDriver_->setDrRobotMotionDriverConfig(&robotConfig2_);
-        }
+
+        drrobotPowerDriver_->setDrRobotMotionDriverConfig(&robotConfig1_);
+    	drrobotMotionDriver_->setDrRobotMotionDriverConfig(&robotConfig2_);
+
         cntNum_ = 0;
     
 		x = 0.0;
@@ -407,30 +383,12 @@ public:
     {
 
       int res = -1;
-      if (  (robotType_ == "Jaguar"))
-      {
-        res = drrobotMotionDriver_->openNetwork(robotConfig1_.robotIP,robotConfig1_.portNum);
-	if (res == 0)
-	{
-		ROS_INFO("open port number at: [%d]", robotConfig1_.portNum);
-	}
-	else
-	{
-		ROS_INFO("could not open network connection to [%s,%d]",  robotConfig1_.robotIP,robotConfig1_.portNum);
-		//ROS_INFO("error code [%d]",  res);
-	}
 
-      }
-      else
-      {
-        drrobotMotionDriver_->openNetwork(robotConfig2_.robotIP,robotConfig2_.portNum);
-        drrobotPowerDriver_->openNetwork(robotConfig1_.robotIP,robotConfig1_.portNum);
-
-      }
+    drrobotMotionDriver_->openNetwork(robotConfig2_.robotIP,robotConfig2_.portNum);
+    drrobotPowerDriver_->openNetwork(robotConfig1_.robotIP,robotConfig1_.portNum);
       
-     cmd_vel_sub_ = node_.subscribe<geometry_msgs::Twist>("cmd_vel", 1, boost::bind(&DrRobotPlayerNode::cmdVelReceived, this, _1));
+     cmd_DesPose_sub = node_.subscribe<robot_move::DesiredPose>("cmd_DesPose", 1, boost::bind(&DrRobotPlayerNode::cmdVelReceived, this, _1));
      scan_sub= node_.subscribe<sensor_msgs::LaserScan>("scan", 1, boost::bind(&DrRobotPlayerNode::processLaserScan, this, _1));
-     new_cmd_sub_ = node_.subscribe<geometry_msgs::Twist>("new_cmd", 1, boost::bind(&DrRobotPlayerNode::cmdNewCommand, this, _1));
      
      
        return(0);
@@ -444,22 +402,16 @@ public:
         usleep(1000000);
         return(status);
     }
-//======================================================================
-	void cmdNewCommand(const geometry_msgs::Twist::ConstPtr& new_cmd)
-	{
-			ROS_INFO("Got new command");
-			
-	}
 
 //======================================================================
- void cmdVelReceived(const geometry_msgs::Twist::ConstPtr& cmd_vel)
+ void cmdVelReceived(const robot_move::DesiredPose::ConstPtr& cmd_DesPose)
     {
 		
 	  
-     g_coordinates_x= cmd_vel->linear.x;
-     g_coordinates_y= cmd_vel->linear.y;
-     t_angle = cmd_vel->angular.z;
-     command=cmd_vel->linear.z;
+     g_coordinates_x= cmd_DesPose->xDesired;
+     g_coordinates_y= cmd_DesPose->yDesired;
+     t_angle = cmd_DesPose->thetaDesired;
+     command=cmd_DesPose->commandDesired;
 
 
     }
@@ -493,14 +445,12 @@ void processLaserScan(const sensor_msgs::LaserScan::ConstPtr& scan){
 		//CALCULATE MOTOR STEERING
 		
 		update_parameters();
-		if(command==0.0)move(g_coordinates_x,g_coordinates_y,t_angle);
-		else if(command==1.0)rotate();
+		if(command==false)move(g_coordinates_x,g_coordinates_y,t_angle);
+		else if(command==true);
 		publish_variables();
 		//publish_encorder();
-		publish_KFodom();
 		
-      if ( (robotConfig1_.boardType == I90_Power) || (robotConfig1_.boardType == Sentinel3_Power)
-          || (robotConfig1_.boardType == Hawk_H20_Power) )
+      if (robotConfig1_.boardType == Hawk_H20_Power)
       {
         if (drrobotPowerDriver_->portOpen())
         {
@@ -545,14 +495,6 @@ void processLaserScan(const sensor_msgs::LaserScan::ConstPtr& scan){
                   if (robotConfig1_.boardType == Hawk_H20_Motion)
                   {
                     motorInfoArray.motorInfos[i].motor_current = (float)motorSensorData_.motorSensorCurrent[i] * 3 /4096;;
-                  }
-                  else if(robotConfig1_.boardType != Jaguar)
-                  {
-                    motorInfoArray.motorInfos[i].motor_current = (float)motorSensorData_.motorSensorCurrent[i] / 728;
-                  }
-                  else
-                  {
-                    motorInfoArray.motorInfos[i].motor_current = 0.0;
                   }
                   motorInfoArray.motorInfos[i].motor_pwm = motorSensorData_.motorSensorPWM[i];
               }
@@ -647,7 +589,7 @@ void processLaserScan(const sensor_msgs::LaserScan::ConstPtr& scan){
     }
 
 //======================================================================
-void sendTransform()
+void sendTransform() //broadcasts transform
 	{
 	  broadcaster_.sendTransform(
       tf::StampedTransform(
@@ -655,7 +597,7 @@ void sendTransform()
       ros::Time::now(), "base_link", "camera_link" ));  //parent, child
 }
 //======================================================================
-void publish_variables(){
+void publish_variables(){ //
 drrobot_jaguar4x4_player::variable var;
 var.variable0=gvariable0;
 var.variable1=gvariable1;
@@ -681,17 +623,6 @@ encorderArray.data.clear();
 encorderArray.data.push_back(D_encorder1);
 encorderArray.data.push_back(D_encorder2);
 encorder_publisher.publish(encorderArray);
-}
-
-//======================================================================
-void publish_KFodom(){
-drrobot_jaguar4x4_player::KFodom var;
-var.deltaD=deltaD;
-var.deltatheta=deltaTheta;
-var.Ddot=deltaD/dt;
-var.thetadot=deltaTheta/dt;
-
-KFodom_publisher.publish(var);
 }
 
 //----------------------------------------------------------------------
@@ -731,11 +662,6 @@ void rotate(){
 		 
 
       }
-      
-      
-else {
-
-      }	
 
     //drrobotMotionDriver_->sendMotorCtrlAllCmd(PWM,left_PWM, right_PWM,NOCONTROL,NOCONTROL, NOCONTROL,NOCONTROL);///// use this -Recent PID controller rotate	
 	//drrobotMotionDriver_->sendMotorCtrlAllCmd(Velocity,300, -300,NOCONTROL,NOCONTROL, NOCONTROL,NOCONTROL);
@@ -769,7 +695,7 @@ void move(double g_coordinates_x, double g_coordinates_y, double t_angle) //targ
  if (robotConfig1_.boardType != Jaguar)
       {
 	double Kp_p=1.4, Kd_p=0.1;  //1.4-0.0
-	double Kp_alpha=2.5, Kd_alpha=0.7,Ki_alpha=0.08; //2.3-0.9-0.06
+	double Kp_alpha=2.5, Kd_alpha=0.7,Ki_alpha=0.08; //2.3-0.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9-0.06
 	double Kp_beta=0;
 	
 		 Vr=Kp_p*p+Kd_p*p_dot;;   //%v=Kp*p+Kd*pdot;
@@ -787,13 +713,8 @@ void move(double g_coordinates_x, double g_coordinates_y, double t_angle) //targ
 		 
 
       }
-      
-      
-else {
 
-      }	
-
-    drrobotMotionDriver_->sendMotorCtrlAllCmd(PWM,left_PWM, right_PWM,NOCONTROL,NOCONTROL, NOCONTROL,NOCONTROL);/////	///// use this-Recent PID controller move
+    drrobotMotionDriver_->sendMotorCtrlAllCmd(PWM,left_PWM,right_PWM,NOCONTROL,NOCONTROL, NOCONTROL,NOCONTROL);/////	///// use this-Recent PID controller move
 	//drrobotMotionDriver_->sendMotorCtrlAllCmd(Velocity,300, -300,NOCONTROL,NOCONTROL, NOCONTROL,NOCONTROL);
 }
 

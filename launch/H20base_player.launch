@@ -2,11 +2,6 @@
 
     <rosparam file="$(find drrobot_jaguar4x4_player)/drrobotplayer_H20.yaml" command="load"/>
     <node pkg="drrobot_jaguar4x4_player" name="drrobot_player" type="drrobot_player" output="screen"/>
-<<<<<<< HEAD
-    <node pkg="drrobot_jaguar4x4_player" name="drrobotMsgTester" type="drrobotMsgTester" output="screen"/> 
-    <node name="plot" pkg="plot" type="plot.py" />    
-=======
-    <node pkg="drrobot_jaguar4x4_player" name="drrobotMsgTester" type="drrobotMsgTester" output="screen"/>   
->>>>>>> 330039df9185ac7273d36632bde9efd370effd07
+    <node pkg="drrobot_jaguar4x4_player" name="drrobotMsgTester" type="drrobotMsgTester" output="screen"/>      
 </launch>
 

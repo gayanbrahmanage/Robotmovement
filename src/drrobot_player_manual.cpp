@@ -175,7 +175,7 @@ public:
         private_nh.getParam("RobotID",robotID_);
         ROS_INFO("I get ROBOT_ID: [%s]", robotID_.c_str());
 
-        robotType_ = "Jaguar";
+        robotType_ = "Hawk H20";
         private_nh.getParam("RobotType",robotType_);
         ROS_INFO("I get ROBOT_Type: [%s]", robotType_.c_str());
 
@@ -183,7 +183,7 @@ public:
         private_nh.getParam("RobotCommMethod",robotCommMethod_);
         ROS_INFO("I get ROBOT_CommMethod: [%s]", robotCommMethod_.c_str());
 
-        robotIP_ = "192.168.0.60";
+        robotIP_ = "192.168.0.95";
         private_nh.getParam("RobotBaseIP",robotIP_);
         ROS_INFO("I get ROBOT_IP: [%s]", robotIP_.c_str());
 

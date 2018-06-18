@@ -166,6 +166,10 @@ public:
 	double vl;
 	double vth;
 	
+////////////////////////////////////////////////////////////////////////
+	double vel2=0, vel1=0;
+	double fric=0;
+////////////////////////////////////////////////////////////////////////
 //======================================================================
 
     DrRobotPlayerNode()
@@ -246,12 +250,29 @@ public:
           robotConfig2_.commMethod = Serial;
         }
 
-        if (robotType_ == "Hawk_H20")
+        if (robotType_ == "Jaguar")
+        {
+          robotConfig1_.boardType = Jaguar;
+        }
+        else if(robotType_ == "I90")
+        {
+          robotConfig1_.boardType = I90_Power;
+          robotConfig2_.boardType = I90_Motion;
+        }
+        else if (robotType_ == "Sentinel3")
+        {
+          robotConfig1_.boardType = Sentinel3_Power;
+          robotConfig2_.boardType = Sentinel3_Motion;
+        }
+        else if (robotType_ == "Hawk_H20")
         {
           robotConfig1_.boardType = Hawk_H20_Power;
           robotConfig2_.boardType = Hawk_H20_Motion;
         }
-
+        else if(robotType_ == "X80SV")
+        {
+          robotConfig1_.boardType = X80SV;
+        }
 
         robotConfig1_.portNum = commPortNum_;
         robotConfig2_.portNum = commPortNum_ + 1;
@@ -317,9 +338,26 @@ public:
     {
 
       int res = -1;
+      if (  (robotType_ == "Jaguar"))
+      {
+        res = drrobotMotionDriver_->openNetwork(robotConfig1_.robotIP,robotConfig1_.portNum);
+	if (res == 0)
+	{
+		ROS_INFO("open port number at: [%d]", robotConfig1_.portNum);
+	}
+	else
+	{
+		ROS_INFO("could not open network connection to [%s,%d]",  robotConfig1_.robotIP,robotConfig1_.portNum);
+		//ROS_INFO("error code [%d]",  res);
+	}
+
+      }
+      else
+      {
         drrobotMotionDriver_->openNetwork(robotConfig2_.robotIP,robotConfig2_.portNum);
         drrobotPowerDriver_->openNetwork(robotConfig1_.robotIP,robotConfig1_.portNum);
 
+      }
       
      cmd_vel_sub_ = node_.subscribe<geometry_msgs::Twist>("cmd_vel", 1, boost::bind(&DrRobotPlayerNode::cmdVelReceived, this, _1));
      scan_sub= node_.subscribe<sensor_msgs::LaserScan>("scan", 1, boost::bind(&DrRobotPlayerNode::processLaserScan, this, _1));
@@ -375,22 +413,53 @@ void get_joystick(const sensor_msgs::Joy::ConstPtr& msg){
 	Vr=(msg->axes[3])*(msg->axes[1]);
 	Wr=(msg->axes[3])*(msg->axes[2]);
 }
+
+
+
+///////////////////////////////=========================================
+
+
+
+
+///////////////////////////////=========================================
+
+
+
+
+
 //======================================================================
  void doUpdate()
     {
+		///////////////////////////////////////////////////////////////
+		vel2 = vel1+Vr-fric;
+		if (vel2 >= 0.07)
+		{
+		fric = vel2*vel2+0.07;
+		}
+		else if (vel2 <=-0.07)
+		{
+		fric = -vel2*vel2-0.07;
+		}
+		else
+		{
+		fric = vel2;
+		}
+		///////////////////////////////////////////////////////////////
 		ROS_INFO("Wheel: [V= %f,W= %f]",Vr,Wr);
 		ROS_INFO("Wheel: [L= %f,R= %f]",w_left,w_right);
 		ROS_INFO("Current: [X= %f,Y= %f,Theta= %f]",x,y,theta*180/pi);
-		
-		
+		cout<<Vr<<endl;
+		cout<<vel2;
 		update_parameters();
-		move(Vr,Wr,tog);
-
-		publish_variables();
+		//move(Vr,Wr,tog); //////original code, changed to following line
+		move(vel2, Wr, tog);
 		//publish_encorder();
-
+		/////////
+		vel1=vel2;
+		/////////
 		
-      if (robotConfig1_.boardType == Hawk_H20_Power)
+      if ( (robotConfig1_.boardType == I90_Power) || (robotConfig1_.boardType == Sentinel3_Power)
+          || (robotConfig1_.boardType == Hawk_H20_Power) )
       {
         if (drrobotPowerDriver_->portOpen())
         {
@@ -1000,6 +1069,7 @@ int main(int argc, char** argv)
 
     DrRobotPlayerNode drrobotPlayer;
     ros::NodeHandle n;
+    
 
     // Start up the robot
     if (drrobotPlayer.start() != 0)
@@ -1014,7 +1084,7 @@ int main(int argc, char** argv)
     while (n.ok())
     {
       drrobotPlayer.doUpdate();
-      ROS_INFO("Gayan Package");
+      ROS_INFO("Thomas Package");
       drrobotPlayer.sendTransform();
       ros::spinOnce();
      loop_rate.sleep();
