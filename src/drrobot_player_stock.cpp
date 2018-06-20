@@ -161,11 +161,11 @@ public:
         private_nh.getParam("MotorDir", motorDir_);
         ROS_INFO("I get MotorDir: [%d]", motorDir_);
 
-        wheelRadius_ = 0.0835;
+        wheelRadius_ = 0.083;
         private_nh.getParam("WheelRadius", wheelRadius_);
         ROS_INFO("I get Wheel Radius: [%f]", wheelRadius_);
 
-        wheelDis_ = 0.305;
+        wheelDis_ = 0.42;
         private_nh.getParam("WheelDistance", wheelDis_);
         ROS_INFO("I get Wheel Distance: [%f]", wheelDis_);
 
@@ -193,6 +193,7 @@ public:
       //  strcat(robotConfig1_.robotIP,robotIP_.c_str());
 	  strcpy(robotConfig1_.robotIP,robotIP_.c_str());
       //  strcat(robotConfig2_.robotIP,robotIP_.c_str());
+
 	  strcpy(robotConfig2_.robotIP,robotIP_.c_str());
 
       //  strcat(robotConfig1_.serialPortName,robotSerialPort_.c_str());
