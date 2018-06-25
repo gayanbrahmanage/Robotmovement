@@ -22,10 +22,10 @@
 #define WHEELDIST        0.42               //Distance between the two wheels
 #define WHEELWIDTH       0.036              //Width of individual wheels
 
-#define LOOKAHEAD        0.1               //Lookahead distance 
+#define LOOKAHEAD        0.05             //Lookahead distance
 
 #define ENCODERCOUNT     376                //Number of encoder steps per full revolution
-#define MAXENCODER       32767              //Maximum encoder value 
+#define MAXENCODER       32767              //Maximum encoder value
 #define ENCROLL          1000               //Encoder rollover threshold (just set it to something high)
 
 //-------------------------------------Node Class--------------------------------------------------------------------------//
@@ -48,7 +48,7 @@ class TrajectoryPlotterNode
       double y;
       double theta;
 
-      //Constructors 
+      //Constructors
       Pose2D():x(0), y(0), theta(0){}
       Pose2D(double a, double b): x(a), y(b), theta(0) {}
       Pose2D(double a, double b, double c): x(a), y(b), theta(c) {}
@@ -85,7 +85,7 @@ class TrajectoryPlotterNode
       //Constructor
       Encoder():left(0), right(0){}
       Encoder(int a, int b): left(a), right(b){}
-    
+
     }Encoder;
 
     //2D Twist struct, for differential drive
@@ -94,15 +94,15 @@ class TrajectoryPlotterNode
       double linear;
       double angular;
 
-      //Constructors 
+      //Constructors
       Twist2D():linear(0), angular(0){}
       Twist2D(Twist2D & rhs)
       {
         linear = rhs.linear;
         angular = rhs.angular;
       }
-      
-      //Overloading assignment operator 
+
+      //Overloading assignment operator
       Twist2D & operator=(Twist2D & rhs)
       {
        if(this != &rhs)
@@ -131,42 +131,42 @@ class TrajectoryPlotterNode
     //Returns shortest difference in angle between current pose vs. angle from A to B
     double angleAB(Pose2D & A, Pose2D & B)
     {
-      if ((B.y-A.y) >= 0 && (B.x-A.x) >= 0)                 //If Quadrant 1, return difference
-        return atan2((B.y-A.y),(B.x-A.x))-A.theta;
-
-      else if ((B.y-A.y) >= 0 && (B.x-A.x) < 0)             //If Quadrant 2, return difference + 90 degrees
-        return atan2((B.y-A.y),(B.x-A.x))-A.theta+M_PI/2;
-
-      else if ((B.y-A.y) < 0 && (B.x-A.x) < 0)              //If Quadrant 3, return difference + 180 degrees
-        return atan2((B.y-A.y),(B.x-A.x))-A.theta+M_PI;
-
-      else if ((B.y-A.y) < 0 && (B.x-A.x) >= 0)             //If Quadrant 4, return difference + 360 degrees
-        return atan2((B.y-A.y),(B.x-A.x))-A.theta+M_PI/2;
+        double goalangle = atan2((B.y-A.y),(B.x-A.x));
+        if(goalangle<0)
+			goalangle += 2*M_PI;
+        double onedir = goalangle - A.theta;
+        if(onedir >M_PI)
+			onedir -= 2*M_PI;
+		else if (onedir<-M_PI)
+			onedir += 2*M_PI;
+        return onedir;
     }
 
   //--------------------------------------Movement Function-------------------------------------------------------//
- 
+
   //Movement command publisher from A to B using 'Follow the Carrot' algorithm
   void cmd_velPublisher(Pose2D & A, Pose2D & B)
     {
+      static bool finallocation = false;
       geometry_msgs::Twist msg;
          ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
       if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
       {
-        if (fabs(angleAB(A, B))>0)   //If the robot isn't facing the next point, i.e. the angle error isn't 0...
+		double angle = angleAB(A, B);
+        if (fabs(angle)>0)   //If the robot isn't facing the next point, i.e. the angle error isn't 0...
         {
               ROS_INFO("Angle Difference:[%f]: ",angleAB(A, B));
-          if (fabs(angleAB(A, B))>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
+          if (fabs(angle)>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
           {
              ROS_INFO("Rotating");
              msg.linear.x = 0;
-             msg.angular.z = angleAB(A, B)/3;
+             msg.angular.z = angle/3;
           }
           else                                      //Else, rotate and move forward
           {
            ROS_INFO("Forward and rotating");
            msg.linear.x = 0.1/2;
-           msg.angular.z = angleAB(A,B)/3;
+           msg.angular.z = angle;
           }
         }
         else                         //Else, don't rotate
@@ -176,18 +176,25 @@ class TrajectoryPlotterNode
           msg.angular.z = 0;
         }
       }
-      else                         //Else... 
+      else                         //Else...
       {
-        if(it!=path.end())  //If you're not at the end of the path, go the next point 
+        if(it!=path.end())  //If you're not at the end of the path, go the next point
         {
           GoalPose = (*it);
           it++;
         }
         else                //Else, stop
         {
+          if (finallocation == false)
+          {
+            finallocation == true;
+            msg.angular.z = M_PI;
+          }
+          else{
           ROS_INFO("Stopped");
-          msg.linear.x = 0;
           msg.angular.z = 0;
+          }
+          msg.linear.x = 0;
         }
       }
       velocity_pub.publish(msg);
@@ -203,10 +210,10 @@ class TrajectoryPlotterNode
       {
         if (encoderValue < 0)               //If the encoder value is negative, add it to the max. encoder
           return MAXENCODER+encoderValue;
-        else                                //Else, subtract the max. encoder from the encoder value 
+        else                                //Else, subtract the max. encoder from the encoder value
           return -MAXENCODER+encoderValue;
       }
-      else                           //Else, just return it as it is 
+      else                           //Else, just return it as it is
         return encoderValue;
     }
 
@@ -228,20 +235,17 @@ class TrajectoryPlotterNode
       return vel;
     }
 
-    //Adds Twist to a current pose 
+    //Adds Twist to a current pose
     void AddTwistTo(Pose2D & Pose, Twist2D & Twist)
     {
       Pose.x += Twist.linear*cos(Pose.theta);
       Pose.y += Twist.linear*sin(Pose.theta);
-
+	  Pose.theta += Twist.angular;
       if (Pose.theta < 0)                           //Keeps rotational pose positive
         Pose.theta += 2*M_PI;
 
-      if (Pose.theta > 2*M_PI && Twist.angular > 0) //Keeps rotational pose below 360 degrees
-         Pose.theta += Twist.angular-2*M_PI;
-
-      else 
-         Pose.theta += Twist.angular;
+      else if (Pose.theta >= 2*M_PI) //Keeps rotational pose below 360 degrees
+         Pose.theta -= 2*M_PI;
 
       ROS_INFO("CurPose - X:[%f], Y:[%f], Theta:[%f]", Pose.x, Pose.y, Pose.theta);
     }
@@ -250,7 +254,7 @@ class TrajectoryPlotterNode
 
 //-------------------------------------------Transform functions---------------------------------------------------------//
     //Publishes odometry to topic "odom"
-    void odomPublisher(Twist2D && twistVel) 
+    void odomPublisher(Twist2D && twistVel)
   {
     static tf::TransformBroadcaster odom_broadcaster; //The broadcaster for the odometry->baselink transform
     geometry_msgs::TransformStamped odom_trans;
@@ -269,7 +273,7 @@ class TrajectoryPlotterNode
     nav_msgs::Odometry odom;
     odom.header.stamp = currentTime;
     odom.header.frame_id = "odom";
-    
+
     //position
     odom.pose.pose.position.x = CurPose.x;
     odom.pose.pose.position.y = CurPose.y;
@@ -282,7 +286,7 @@ class TrajectoryPlotterNode
     odom.twist.twist.linear.y = 0;
     odom.twist.twist.angular.z = twistVel.angular;
 
-    odom_pub.publish(odom);	
+    odom_pub.publish(odom);
     AddTwistTo(CurPose, twistVel);
   }
 
@@ -290,15 +294,20 @@ class TrajectoryPlotterNode
     TrajectoryPlotterNode(){
 
       //Manually put in a path (if you want)
-      path.push_back(Pose2D(1.1,0,0));
-      path.push_back(Pose2D(0,0));
-      
+      path.push_back(Pose2D(2.5,0,0));
+      path.push_back(Pose2D(2.85,1.8,0.0));
+      path.push_back(Pose2D(2.80, 3.3,0.0));
+      path.push_back(Pose2D(2.0, 4.0));
+      path.push_back(Pose2D(2.80, 3.3,0.0));
+      path.push_back(Pose2D(2.65,1.8,0.0));
+      path.push_back(Pose2D(2.0,0,0));
+      path.push_back(Pose2D(-0.2,0,0));
       //The actual function
 
       it = path.begin();
       if(it!=path.end())
       {
-        GoalPose = (*it); 
+        GoalPose = (*it);
         it++;
       }
       velocity_pub = n.advertise<geometry_msgs::Twist>("drrobot_cmd_vel", 10);
@@ -318,7 +327,7 @@ class TrajectoryPlotterNode
     {
       static Encoder prev(odommsg->motorInfos[0].encoder_pos,odommsg->motorInfos[1].encoder_pos);
       Encoder Delta;
-      
+
             ////ROS_INFO("Raw wheel movement: [%d] left, [%d] right", odommsg->motorInfos[0].encoder_pos, odommsg->motorInfos[1].encoder_pos);
 
       Delta.left = RollRemover((odommsg->motorInfos[0].encoder_pos-prev.left));
