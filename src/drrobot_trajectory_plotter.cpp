@@ -253,6 +253,7 @@ class TrajectoryPlotterNode
       void odomPublisher(Twist2D && twistVel)
     {
       static tf::TransformBroadcaster odom_broadcaster; //The broadcaster for the odometry->baselink transform
+      currentTime = ros::Time::now(); 
       geometry_msgs::TransformStamped odom_trans;
       odom_trans.header.stamp = currentTime;
       odom_trans.header.frame_id = "odom";
@@ -284,8 +285,15 @@ class TrajectoryPlotterNode
 
       odom_pub.publish(odom);
       AddTwistTo(CurPose, twistVel);
+      sendTransform();
     }
+    void sendTransform ()
+    {
+      static tf::TransformBroadcaster broadcaster;
+      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0.03,0,0.1)), currentTime, "base_link", "laser"));
+      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0.03,0,0.1)), currentTime, "laser", "scan"));
 
+    }
 
   public:
     TrajectoryPlotterNode(){
@@ -360,6 +368,9 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "drrobot_trajectory_plotter");
   TrajectoryPlotterNode DrRobotPlotterNode;
   ros::spin();
+  while(ros::ok())
+  {
+  }
   return 0;
 }
 //By Noam and Thomas
