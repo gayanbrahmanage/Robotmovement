@@ -24,7 +24,7 @@
 #define WHEELDIST        0.42               //Distance between the two wheels
 #define WHEELWIDTH       0.036              //Width of individual wheels
 
-#define LOOKAHEAD        0.05             //Lookahead distance
+#define LOOKAHEAD        0.06               //Lookahead distance
 
 #define ENCODERCOUNT     376                //Number of encoder steps per full revolution
 #define MAXENCODER       32767              //Maximum encoder value
@@ -166,7 +166,7 @@ class TrajectoryPlotterNode
         if(pathRecieved == true)
         {
 	    Pose2D A = getCurrentPosition();
-            geometry_msgs::Twist msg;
+            static geometry_msgs::Twist msg;
             ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
             if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
             {
@@ -178,19 +178,19 @@ class TrajectoryPlotterNode
                 {
                    ROS_INFO("Rotating");
                    msg.linear.x =0;
-                   msg.angular.z = angle/3;
+                   msg.angular.z = angle/2;
                 }
                 else                                      //Else, rotate and move forward
                 {
                  ROS_INFO("Forward and rotating");
-                 msg.linear.x = 0.1/2;
+                 msg.linear.x = 0.15/2;
                  msg.angular.z = angle;
                 }
               }
               else                         //Else, don't rotate
               {
                 ROS_INFO("Forward");
-                msg.linear.x = 0.1/2;
+                msg.linear.x = 0.15/2;
                 msg.angular.z = 0;
               }
             }
