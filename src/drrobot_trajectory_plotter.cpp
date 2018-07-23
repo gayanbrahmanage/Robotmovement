@@ -68,6 +68,16 @@ class TrajectoryPlotterNode
          }
          return *this;
        }
+       bool checkSamePosition (Pose2D & rhs)
+       {
+         if(fabs(x-rhs.x)>LOOKAHEAD)
+          return false;
+         if(fabs(y-rhs.y)>LOOKAHEAD)
+          return false;
+         if(fabs(theta-rhs.theta)>0.02)
+          return false;
+        return true;
+       }
      }Pose2D;
 
      //Encoder values
@@ -116,6 +126,7 @@ class TrajectoryPlotterNode
     ros::Subscriber MotorInfo_sub;
     ros::Timer timer;
     bool pathRecieved;
+    bool ignorePath;
     std::vector<Pose2D> path;
     Pose2D curPose;                          //Current position
     Pose2D pastcurPose;
@@ -163,15 +174,15 @@ class TrajectoryPlotterNode
     //Movement command publisher from A to B using 'Follow the Carrot' algorithm
     void cmd_velPublisher(Pose2D & B)
       {
-        if(pathRecieved == true)
+        if(pathRecieved == true && ignorePath == false)
         {
-	    Pose2D A = getCurrentPosition();
+	          Pose2D A = getCurrentPosition();
             static geometry_msgs::Twist msg;
             ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
             if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
             {
               double angle = angleAB(A, B);
-             if (fabs(angle)>0.035)           //If the robot isn't facing the next point, i.e. the angle error isn't 0...
+             if (fabs(angle)>0.040)           //If the robot isn't facing the next point, i.e. the angle error isn't 0...
               {
                     ROS_INFO("Angle Difference:[%f]: ",angleAB(A, B));
                 if (fabs(angle)>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
@@ -183,14 +194,14 @@ class TrajectoryPlotterNode
                 else                                      //Else, rotate and move forward
                 {
                  ROS_INFO("Forward and rotating");
-                 msg.linear.x = 0.15/2;
+                 msg.linear.x = 0.1;
                  msg.angular.z = angle;
                 }
               }
               else                         //Else, don't rotate
               {
                 ROS_INFO("Forward");
-                msg.linear.x = 0.15/2;
+                msg.linear.x = 0.1;
                 msg.angular.z = 0;
               }
             }
@@ -204,8 +215,8 @@ class TrajectoryPlotterNode
               else                //Else, stop
               {
                 ROS_INFO("Goal Reached");
-                pathRecieved = false;
                 path.clear();
+                pathRecieved = false;
                 msg.angular.z = 0;
                 msg.linear.x = 0;
               }
@@ -281,7 +292,6 @@ class TrajectoryPlotterNode
       odom_trans.transform.translation.y = curPose.y;
       odom_trans.transform.translation.z = 0;
       odom_trans.transform.rotation = tf::createQuaternionMsgFromYaw(curPose.theta);
-pastcurPose = curPose;
       odom_broadcaster.sendTransform(odom_trans);
 
       //publishing the odometry message
@@ -309,15 +319,15 @@ pastcurPose = curPose;
     {
       static tf::TransformBroadcaster broadcaster;
       broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0.03,0,0.1)), currentTime, "base_link", "laser"));
-      broadcaster.sendTransform(tf::StampedTrans
-        form(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0.1)), currentTime, "laser", "scan"));
+      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0.1)), currentTime, "laser", "scan"));
 
     }
 
   public:
     TrajectoryPlotterNode(){
       pathRecieved =false;
-      timer = n.createTimer(ros::Duration(5.0), timerCallback);
+      ignorePath = false;
+      timer = n.createTimer(ros::Duration(5.0), boost::bind(&TrajectoryPlotterNode::timerCallback, this, _1));
       velocity_pub = n.advertise<geometry_msgs::Twist>("drrobot_cmd_vel", 10);
       odom_pub = n.advertise<nav_msgs::Odometry>("odom",10);
       path_sub = n.subscribe<nav_msgs::Path>("path", 1, boost::bind(&TrajectoryPlotterNode::pathCallback, this, _1));
@@ -328,13 +338,31 @@ pastcurPose = curPose;
   {
     if(pathRecieved == true)
     {
+      if(curPose.checkSamePosition(pastcurPose))
+      {
+        ignorePath = true;
+        pathRecieved = false;
+        path.clear();
+        geometry_msgs::Twist msg;
+        ros::Time start = ros::Time::now();
+        ros::Duration timeout(2.0);
+        while(ros::Time::now() - start < timeout)
+        {
+          msg.linear.x =-0.1;
+          velocity_pub.publish(msg);
+        }
+        msg.linear.x =0;
+        msg.angular.z = M_PI/4;
+        velocity_pub.publish(msg);
+        ignorePath = false;
+      }
     }
     pastcurPose = curPose;
   }
     //Callback function from "path"
     void pathCallback(const nav_msgs::Path::ConstPtr& pathmsg)
     {
-        if(pathRecieved == false)
+        if(pathRecieved == false && ignorePath == false)
         {
           for(int i =0; i<pathmsg->poses.size();i++)
           {
@@ -384,7 +412,7 @@ int main(int argc, char **argv)
   //Initializing
   ros::init(argc, argv, "drrobot_trajectory_plotter");
   TrajectoryPlotterNode DrRobotPlotterNode;
-  ros::AsyncSpinner spinner(2);
+  ros::AsyncSpinner spinner(3);
   spinner.start();
   ros::waitForShutdown();
   return 0;
