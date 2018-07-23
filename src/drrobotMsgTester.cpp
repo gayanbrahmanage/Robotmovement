@@ -82,19 +82,19 @@ void motorSensorCallback(const drrobot_jaguar4x4_player::MotorInfoArray::ConstPt
 {
   int msgSize = msg->motorInfos.capacity();
 
-  if (msgSize == 6)
-  {
-      ROS_INFO("Motor Encoder Pos: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].encoder_pos, msg->motorInfos[1].encoder_pos, msg->motorInfos[2].encoder_pos
-               , msg->motorInfos[3].encoder_pos, msg->motorInfos[4].encoder_pos, msg->motorInfos[5].encoder_pos);
-      ROS_INFO("Motor Encoder Vel: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].encoder_vel, msg->motorInfos[1].encoder_vel, msg->motorInfos[2].encoder_vel
-                 , msg->motorInfos[3].encoder_vel, msg->motorInfos[4].encoder_vel, msg->motorInfos[5].encoder_vel);
-      ROS_INFO("Motor Encoder Dir: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].encoder_dir, msg->motorInfos[1].encoder_dir, msg->motorInfos[2].encoder_dir
-                 , msg->motorInfos[3].encoder_dir, msg->motorInfos[4].encoder_dir, msg->motorInfos[5].encoder_dir);
-      ROS_INFO("Motor Motor Current: [%2.2f, %2.2f, %2.2f, %2.2f, %2.2f, %2.2f]", msg->motorInfos[0].motor_current, msg->motorInfos[1].motor_current, msg->motorInfos[2].motor_current
-                   , msg->motorInfos[3].motor_current, msg->motorInfos[4].motor_current, msg->motorInfos[5].motor_current);
-      ROS_INFO("Motor Motor_PWM: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].motor_pwm, msg->motorInfos[1].motor_pwm, msg->motorInfos[2].motor_pwm
-                 , msg->motorInfos[3].motor_pwm, msg->motorInfos[4].motor_pwm, msg->motorInfos[5].motor_pwm);
-  }
+  // if (msgSize == 6)
+  // {
+  //     ROS_DEBUG("Motor Encoder Pos: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].encoder_pos, msg->motorInfos[1].encoder_pos, msg->motorInfos[2].encoder_pos
+  //              , msg->motorInfos[3].encoder_pos, msg->motorInfos[4].encoder_pos, msg->motorInfos[5].encoder_pos);
+  //     ROS_INFO("Motor Encoder Vel: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].encoder_vel, msg->motorInfos[1].encoder_vel, msg->motorInfos[2].encoder_vel
+  //                , msg->motorInfos[3].encoder_vel, msg->motorInfos[4].encoder_vel, msg->motorInfos[5].encoder_vel);
+  //     ROS_DEBUG("Motor Encoder Dir: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].encoder_dir, msg->motorInfos[1].encoder_dir, msg->motorInfos[2].encoder_dir
+  //                , msg->motorInfos[3].encoder_dir, msg->motorInfos[4].encoder_dir, msg->motorInfos[5].encoder_dir);
+  //     ROS_INFO("Motor Motor Current: [%2.2f, %2.2f, %2.2f, %2.2f, %2.2f, %2.2f]", msg->motorInfos[0].motor_current, msg->motorInfos[1].motor_current, msg->motorInfos[2].motor_current
+  //                  , msg->motorInfos[3].motor_current, msg->motorInfos[4].motor_current, msg->motorInfos[5].motor_current);
+  //     ROS_INFO("Motor Motor_PWM: [%d, %d, %d, %d, %d, %d]", msg->motorInfos[0].motor_pwm, msg->motorInfos[1].motor_pwm, msg->motorInfos[2].motor_pwm
+  //                , msg->motorInfos[3].motor_pwm, msg->motorInfos[4].motor_pwm, msg->motorInfos[5].motor_pwm);
+  // }
 }
 
 /*! \brief
@@ -160,13 +160,12 @@ void standardSensorCallback(const drrobot_jaguar4x4_player::StandardSensor::Cons
 void powerSensorCallback(const drrobot_jaguar4x4_player::PowerInfo::ConstPtr& msg)
 {
 
+  ROS_INFO("|| Battery 1 Voltage: [%2.2f V]", msg->bat1_vol);
+  ROS_INFO("|| Battery 2 Voltage: [%2.2f V]", msg->bat2_vol);
+  ROS_INFO("|| DCIN Power Voltage: [%2.2f V]", msg->dcin_vol);
 
-  ROS_DEBUG("Battery 1 Voltage: [%2.2f V]", msg->bat1_vol);
-  ROS_DEBUG("Battery 2 Voltage: [%2.2f V]", msg->bat2_vol);
-  ROS_DEBUG("DCIN Power Voltage: [%2.2f V]", msg->dcin_vol);
-
-  ROS_DEBUG("Battery 1 Temperature Sensor: [%f]", msg->bat1_temp);
-  ROS_DEBUG("Battery 2 Temperature Sensor: [%f]", msg->bat2_temp);
+  ROS_DEBUG("Battery 1 Temperature Sensor: [%2.2f C]", msg->bat1_temp/100);
+  ROS_DEBUG("Battery 2 Temperature Sensor: [%2.2f C]", msg->bat2_temp/100);
 
   ROS_DEBUG("Power Status: [ %d ]", msg->power_status);
   ROS_DEBUG("Power Path: [ %d ]", msg->power_path);
@@ -185,7 +184,7 @@ double trans2Temperature(int adValue)
  double tempM = 0;
  double k = (double)adValue/4095;
  double resValue = 0;
- 
+
  if (k != 1)
  {
 	resValue = 10000 * k/(1-k);
@@ -204,7 +203,7 @@ double trans2Temperature(int adValue)
 	tempM = 100;
  }
  else
- { 
+ {
 	for(int i = 0; i < 24; i++)
 	{
 		if (resValue < resTable[i] && (resValue > resTable[i + 1]) )
@@ -227,7 +226,7 @@ double trans2Temperature(int adValue)
 }
 
 /*! \brief
- *      This call back function is for custom sensor message, 
+ *      This call back function is for custom sensor message,
  *  @param[in] msg  is a pointer of custom sensor message
  * please make sure what kind of sensor on the custom AD channel
  * for Jaguar Robot, the custom AD channel[4~7] is for motor temperature sensor
@@ -284,4 +283,3 @@ int main(int argc, char **argv)
 
   return 0;
 }
-

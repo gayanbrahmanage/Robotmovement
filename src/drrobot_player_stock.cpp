@@ -122,7 +122,7 @@ public:
         private_nh.getParam("RobotID",robotID_);
         ROS_INFO("I get ROBOT_ID: [%s]", robotID_.c_str());
 
-        robotType_ = "Jaguar";
+        robotType_ = "Hawk_H20";
         private_nh.getParam("RobotType",robotType_);
         ROS_INFO("I get ROBOT_Type: [%s]", robotType_.c_str());
 
@@ -472,7 +472,7 @@ int main(int argc, char** argv)
     }
     /////////////////////////////////////////////////////////////////
 
-    ros::Rate loop_rate(10);      //10Hz
+    ros::Rate loop_rate(50);      //50Hz
 
     while (n.ok())
     {

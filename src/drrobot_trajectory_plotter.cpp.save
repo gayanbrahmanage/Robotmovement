@@ -144,27 +144,14 @@ class TrajectoryPlotterNode
         return onedir;
     }
     //--------------------------------------Movement Function-------------------------------------------------------//
-	Pose2D getCurrentPosition()
-   {
-        tf::StampedTransform transform;
-        while(true){
-                try{
-                        tflistener.lookupTransform("/map", "/base_link", ros::Time(0), transform);
-                        break;
-                }
-                catch(tf::TransformException t)
-                {}
-        }
-        Pose2D currentPosition(transform.getOrigin().x(), transform.getOrigin().y(), tf::getYaw(transform.getRotation()));
-        return currentPosition;
-   }
+
     //Movement command publisher from A to B using 'Follow the Carrot' algorithm
     void cmd_velPublisher(Pose2D & B)
       {
         if(pathRecieved == true)
         {
-	    Pose2D A = getCurrentPosition();
-            geometry_msgs::Twist msg;
+	    Pose2D A = getCurrentPose();
+            static geometry_msgs::Twist msg;
             ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
             if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
             {
@@ -175,7 +162,7 @@ class TrajectoryPlotterNode
                 if (fabs(angle)>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
                 {
                    ROS_INFO("Rotating");
-                   msg.linear.x =0;
+                   msg.linear.x /= 2;
                    msg.angular.z = angle/3;
                 }
                 else                                      //Else, rotate and move forward
@@ -365,6 +352,12 @@ class TrajectoryPlotterNode
       //Publish function for movement command; publishes to "drrobot_cmd_vel"
       cmd_velPublisher(GoalPose);
     }
+   Pose2D getCurrentPosition()
+   {
+	tf::StampedTransform transform;
+	while(true){
+		try{
+			tflistener.lookupTransfor
 };
 //--------------------------------------Main-------------------------------------------------------------------------------//
 
