@@ -48,7 +48,7 @@ class TrajectoryPlotterNode
        Pose2D(double a, double b, double c): x(a), y(b), theta(c) {}
        Pose2D(const Pose2D & rhs): x(rhs.x), y(rhs.y), theta(rhs.theta){}
        Pose2D(Pose2D && rhs): x(rhs.x), y(rhs.y), theta(rhs.theta){}
-
+       //add a difference checker.
        //Overloading assignment operator
        Pose2D & operator=(Pose2D & rhs){
          if(this != &rhs)
@@ -114,9 +114,11 @@ class TrajectoryPlotterNode
     ros::Publisher odom_pub;
     ros::Subscriber path_sub;
     ros::Subscriber MotorInfo_sub;
+    ros::Timer timer;
     bool pathRecieved;
     std::vector<Pose2D> path;
-    Pose2D CurPose;                          //Current position
+    Pose2D curPose;                          //Current position
+    Pose2D pastcurPose;
     Pose2D GoalPose;                         //Goal position
     std::vector<Pose2D>::iterator it;        //Iterator
     ros::Time currentTime = ros::Time::now(); //Time
@@ -193,7 +195,7 @@ class TrajectoryPlotterNode
               }
             }
             else                         //Else...
-            {
+            {pastcurPose = curPose;
               if(it!=path.end())  //If you're not at the end of the path, go the next point
               {
                 GoalPose = (*it);
@@ -259,7 +261,7 @@ class TrajectoryPlotterNode
         else if (Pose.theta >= 2*M_PI) //Keeps rotational pose below 360 degrees
            Pose.theta -= 2*M_PI;
 
-        ROS_INFO("CurPose - X:[%f], Y:[%f], Theta:[%f]", Pose.x, Pose.y, Pose.theta);
+        ROS_INFO("curPose - X:[%f], Y:[%f], Theta:[%f]", Pose.x, Pose.y, Pose.theta);
       }
 
 
@@ -275,11 +277,11 @@ class TrajectoryPlotterNode
       odom_trans.header.frame_id = "odom";
       odom_trans.child_frame_id = "base_link";
 
-      odom_trans.transform.translation.x = CurPose.x;
-      odom_trans.transform.translation.y = CurPose.y;
+      odom_trans.transform.translation.x = curPose.x;
+      odom_trans.transform.translation.y = curPose.y;
       odom_trans.transform.translation.z = 0;
-      odom_trans.transform.rotation = tf::createQuaternionMsgFromYaw(CurPose.theta);
-
+      odom_trans.transform.rotation = tf::createQuaternionMsgFromYaw(curPose.theta);
+pastcurPose = curPose;
       odom_broadcaster.sendTransform(odom_trans);
 
       //publishing the odometry message
@@ -288,10 +290,10 @@ class TrajectoryPlotterNode
       odom.header.frame_id = "odom";
 
       //position
-      odom.pose.pose.position.x = CurPose.x;
-      odom.pose.pose.position.y = CurPose.y;
+      odom.pose.pose.position.x = curPose.x;
+      odom.pose.pose.position.y = curPose.y;
       odom.pose.pose.position.z = 0;
-      odom.pose.pose.orientation = tf::createQuaternionMsgFromYaw(CurPose.theta);
+      odom.pose.pose.orientation = tf::createQuaternionMsgFromYaw(curPose.theta);
 
       //velocity
       odom.child_frame_id = "base_link";
@@ -300,26 +302,35 @@ class TrajectoryPlotterNode
       odom.twist.twist.angular.z = twistVel.angular;
 
       odom_pub.publish(odom);
-      AddTwistTo(CurPose, twistVel);
+      AddTwistTo(curPose, twistVel);
       sendTransform();
     }
     void sendTransform ()
     {
       static tf::TransformBroadcaster broadcaster;
       broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0.03,0,0.1)), currentTime, "base_link", "laser"));
-      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0.1)), currentTime, "laser", "scan"));
+      broadcaster.sendTransform(tf::StampedTrans
+        form(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0.1)), currentTime, "laser", "scan"));
 
     }
 
   public:
     TrajectoryPlotterNode(){
       pathRecieved =false;
+      timer = n.createTimer(ros::Duration(5.0), timerCallback);
       velocity_pub = n.advertise<geometry_msgs::Twist>("drrobot_cmd_vel", 10);
       odom_pub = n.advertise<nav_msgs::Odometry>("odom",10);
       path_sub = n.subscribe<nav_msgs::Path>("path", 1, boost::bind(&TrajectoryPlotterNode::pathCallback, this, _1));
       MotorInfo_sub = n.subscribe<drrobot_jaguar4x4_player::MotorInfoArray>("drrobot_motor", 1, boost::bind(&TrajectoryPlotterNode::motorCallback, this, _1));
     }
   //--------------------------------------Callback and publisher functions-------------------------------------------------//
+  void timerCallback(const ros::TimerEvent& e)
+  {
+    if(pathRecieved == true)
+    {
+    }
+    pastcurPose = curPose;
+  }
     //Callback function from "path"
     void pathCallback(const nav_msgs::Path::ConstPtr& pathmsg)
     {
