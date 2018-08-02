@@ -5,11 +5,11 @@
 
 //Odometry information
 #include <drrobot_jaguar4x4_player/MotorInfoArray.h>
-
 //Message types
 #include <nav_msgs/Path.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Pose.h>
 #include <nav_msgs/Odometry.h>
 
 #include <tf/transform_broadcaster.h>
@@ -18,7 +18,6 @@
 #include <sstream>
 #include <iostream>
 
-#define LOOPRATE         10                 //Looprate
 
 #define WHEELRAD         0.083              //Radius of the wheel
 #define WHEELDIST        0.42               //Distance between the two wheels
@@ -70,11 +69,11 @@ class TrajectoryPlotterNode
        }
        bool checkSamePosition (Pose2D & rhs)
        {
-         if(fabs(x-rhs.x)>LOOKAHEAD)
+         if(fabs(x-rhs.x)>0.001)
           return false;
-         if(fabs(y-rhs.y)>LOOKAHEAD)
+         if(fabs(y-rhs.y)>0.001)
           return false;
-         if(fabs(theta-rhs.theta)>0.02)
+         if(fabs(theta-rhs.theta)>0.01)
           return false;
         return true;
        }
@@ -122,6 +121,7 @@ class TrajectoryPlotterNode
     ros::NodeHandle n;
     ros::Publisher velocity_pub;
     ros::Publisher odom_pub;
+    ros::Publisher goal_pub;
     ros::Subscriber path_sub;
     ros::Subscriber MotorInfo_sub;
     ros::Timer timer;
@@ -134,6 +134,7 @@ class TrajectoryPlotterNode
     std::vector<Pose2D>::iterator it;        //Iterator
     ros::Time currentTime = ros::Time::now(); //Time
     tf::TransformListener tflistener;
+    geometry_msgs::Pose goalOfFinal;
   private: // private methods
   //--------------------------------------Geometry Functions---------------------------------------------------//
 
@@ -176,7 +177,8 @@ class TrajectoryPlotterNode
       {
         if(pathRecieved == true && ignorePath == false)
         {
-	          Pose2D A = getCurrentPosition();
+
+	    Pose2D A = getCurrentPosition();
             static geometry_msgs::Twist msg;
             ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
             if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
@@ -194,7 +196,7 @@ class TrajectoryPlotterNode
                 else                                      //Else, rotate and move forward
                 {
                  ROS_INFO("Forward and rotating");
-                 msg.linear.x = 0.1;
+		 msg.linear.x=0.1;
                  msg.angular.z = angle;
                 }
               }
@@ -202,7 +204,7 @@ class TrajectoryPlotterNode
               {
                 ROS_INFO("Forward");
                 msg.linear.x = 0.1;
-                msg.angular.z = 0;
+                msg.angular.z =0;
               }
             }
             else                         //Else...
@@ -266,7 +268,8 @@ class TrajectoryPlotterNode
         Pose.x += Twist.linear*cos(Pose.theta);
         Pose.y += Twist.linear*sin(Pose.theta);
         Pose.theta += Twist.angular;
-        if (Pose.theta < 0)                           //Keeps rotational pose positive
+        if (Pose.theta < 0)        //publishes the path to /path
+                   //Keeps rotational pose positive
           Pose.theta += 2*M_PI;
 
         else if (Pose.theta >= 2*M_PI) //Keeps rotational pose below 360 degrees
@@ -319,7 +322,7 @@ class TrajectoryPlotterNode
     {
       static tf::TransformBroadcaster broadcaster;
       broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0.03,0,0.1)), currentTime, "base_link", "laser"));
-      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0.1)), currentTime, "laser", "scan"));
+      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0)), currentTime, "laser", "scan"));
 
     }
 
@@ -331,18 +334,22 @@ class TrajectoryPlotterNode
       velocity_pub = n.advertise<geometry_msgs::Twist>("drrobot_cmd_vel", 10);
       odom_pub = n.advertise<nav_msgs::Odometry>("odom",10);
       path_sub = n.subscribe<nav_msgs::Path>("path", 1, boost::bind(&TrajectoryPlotterNode::pathCallback, this, _1));
+      goal_pub = n.advertise<geometry_msgs::Pose>("goal_post", 10);
       MotorInfo_sub = n.subscribe<drrobot_jaguar4x4_player::MotorInfoArray>("drrobot_motor", 1, boost::bind(&TrajectoryPlotterNode::motorCallback, this, _1));
+
     }
   //--------------------------------------Callback and publisher functions-------------------------------------------------//
   void timerCallback(const ros::TimerEvent& e)
-  {
+ { 
+    static Pose2D currentPose;
+    currentPose = getCurrentPosition();
     if(pathRecieved == true)
     {
-      if(curPose.checkSamePosition(pastcurPose))
+      if(pastcurPose.checkSamePosition(currentPose))
       {
         ignorePath = true;
+	path.clear();
         pathRecieved = false;
-        path.clear();
         geometry_msgs::Twist msg;
         ros::Time start = ros::Time::now();
         ros::Duration timeout(2.0);
@@ -355,15 +362,15 @@ class TrajectoryPlotterNode
         msg.angular.z = M_PI/4;
         velocity_pub.publish(msg);
         ignorePath = false;
+	goal_pub.publish(goalOfFinal);
       }
     }
-    pastcurPose = curPose;
+    pastcurPose = currentPose;
   }
     //Callback function from "path"
     void pathCallback(const nav_msgs::Path::ConstPtr& pathmsg)
     {
-        if(pathRecieved == false && ignorePath == false)
-        {
+	  path.clear();
           for(int i =0; i<pathmsg->poses.size();i++)
           {
             Pose2D temp;
@@ -377,9 +384,10 @@ class TrajectoryPlotterNode
             GoalPose = (*it);
             it++;
           }
-          pathRecieved = true;
+	  goalOfFinal.position.x = path.back().x;
+	  goalOfFinal.position.y = path.back().y;
           cmd_velPublisher(GoalPose);
-        }
+	  pathRecieved = true;
     }
 
     //Callback function for odometry from "drrobot_motor"; converts encoder movement to Twist as "twistVel"
