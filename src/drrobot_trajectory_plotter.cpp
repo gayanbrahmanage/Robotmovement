@@ -122,6 +122,7 @@ class TrajectoryPlotterNode
     ros::Publisher velocity_pub;
     ros::Publisher odom_pub;
     ros::Publisher goal_pub;
+    ros::Subscriber goal_sub;
     ros::Subscriber path_sub;
     ros::Subscriber MotorInfo_sub;
     ros::Timer timer;
@@ -208,7 +209,7 @@ class TrajectoryPlotterNode
               }
             }
             else                         //Else...
-            {pastcurPose = curPose;
+            {
               if(it!=path.end())  //If you're not at the end of the path, go the next point
               {
                 GoalPose = (*it);
@@ -216,11 +217,14 @@ class TrajectoryPlotterNode
               }
               else                //Else, stop
               {
-                ROS_INFO("Goal Reached");
                 path.clear();
                 pathRecieved = false;
                 msg.angular.z = 0;
                 msg.linear.x = 0;
+		if(fabs(GoalPose.x-goalOfFinal.position.x)>LOOKAHEAD ||fabs(GoalPose.y-goalOfFinal.position.y)>LOOKAHEAD)
+		{
+		  goal_pub.publish(goalOfFinal);
+		}
               }
             }
             velocity_pub.publish(msg);
@@ -335,10 +339,16 @@ class TrajectoryPlotterNode
       odom_pub = n.advertise<nav_msgs::Odometry>("odom",10);
       path_sub = n.subscribe<nav_msgs::Path>("path", 1, boost::bind(&TrajectoryPlotterNode::pathCallback, this, _1));
       goal_pub = n.advertise<geometry_msgs::Pose>("goal_post", 10);
+      goal_sub = n.subscribe<geometry_msgs::Pose>("goal_post", 10, boost::bind(&TrajectoryPlotterNode::goalCallback, this, _1));
       MotorInfo_sub = n.subscribe<drrobot_jaguar4x4_player::MotorInfoArray>("drrobot_motor", 1, boost::bind(&TrajectoryPlotterNode::motorCallback, this, _1));
 
     }
   //--------------------------------------Callback and publisher functions-------------------------------------------------//
+  void goalCallback(const geometry_msgs::Pose::ConstPtr & goal)
+  {
+	goalOfFinal = *goal;
+  }
+	
   void timerCallback(const ros::TimerEvent& e)
  { 
     static Pose2D currentPose;
@@ -384,8 +394,6 @@ class TrajectoryPlotterNode
             GoalPose = (*it);
             it++;
           }
-	  goalOfFinal.position.x = path.back().x;
-	  goalOfFinal.position.y = path.back().y;
           cmd_velPublisher(GoalPose);
 	  pathRecieved = true;
     }
@@ -420,7 +428,7 @@ int main(int argc, char **argv)
   //Initializing
   ros::init(argc, argv, "drrobot_trajectory_plotter");
   TrajectoryPlotterNode DrRobotPlotterNode;
-  ros::AsyncSpinner spinner(3);
+  ros::AsyncSpinner spinner(4);
   spinner.start();
   ros::waitForShutdown();
   return 0;
