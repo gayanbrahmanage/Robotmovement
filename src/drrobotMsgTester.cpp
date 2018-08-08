@@ -189,11 +189,12 @@ void powerSensorCallback(const drrobot_jaguar4x4_player::PowerInfo::ConstPtr& ms
   //Modified to display percentages as well; range changes depending on if it's charging or not
   if (msg->power_status == 0)   //Not charging
     {
-      ROS_INFO("|| Battery Av. Voltage: [%2.1f V] - [%d%%] - Not Charging", (msg->bat2_vol+msg->bat1_vol)/2, voltToPercent(10.5, 17.5, (msg->bat2_vol+msg->bat1_vol)/2));
+
+      ROS_INFO("|| Battery Av. Voltage: [%2.1f V] - [%d%%] - Not Charging", (msg->bat2_vol+msg->bat1_vol)/2, voltToPercent(10.5, 19.5, (msg->bat2_vol+msg->bat1_vol)/2));  //10.5,17.5 for scaled
     }
   else                          //Charging
     {
-      ROS_INFO("|| Battery Av. Voltage: [%2.1f V] - [%d%%] - Charging", (msg->bat2_vol+msg->bat1_vol)/2, voltToPercent(15.5, 19, (msg->bat2_vol+msg->bat1_vol)/2));
+      ROS_INFO("|| Battery Av. Voltage: [%2.1f V] - [%d%%] - Charging", (msg->bat2_vol+msg->bat1_vol)/2, voltToPercent(10.5, 19.5, (msg->bat2_vol+msg->bat1_vol)/2)); //15.5, 19 for scaled
       ROS_INFO("|| DCIN Power Voltage: [%2.2f V] - [%2.1f%%] Deviation", msg->dcin_vol, (msg->dcin_vol-22)/(22)*100);   //Deviation is the percent difference from the standard charge voltage (~22V)
     }
 

@@ -16,11 +16,11 @@ Email: noam.anglo@ucalgary.ca; thomas.vy@ucalgary.ca
 
 //Odometry information
 #include <drrobot_jaguar4x4_player/MotorInfoArray.h>
-
 //Message types
 #include <nav_msgs/Path.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Pose.h>
 #include <nav_msgs/Odometry.h>
 #include <visualization_msgs/Marker.h>
 
@@ -133,6 +133,8 @@ class TrajectoryPlotterNode
     ros::Publisher velocity_pub;
     ros::Publisher odom_pub;
     ros::Publisher marker_pub;
+    ros::Publisher goal_pub;
+    ros::Subscriber goal_sub;
     ros::Subscriber path_sub;
     ros::Subscriber MotorInfo_sub;
     ros::Timer timer;
@@ -145,6 +147,7 @@ class TrajectoryPlotterNode
     std::vector<Pose2D>::iterator it;        //Iterator
     ros::Time currentTime = ros::Time::now(); //Time
     tf::TransformListener tflistener;
+    geometry_msgs::Pose goalOfFinal;
   private: // private methods
   //--------------------------------------Geometry Functions---------------------------------------------------//
 
@@ -221,7 +224,7 @@ class TrajectoryPlotterNode
               }
             }
             else                         //Else...
-            {pastcurPose = curPose;
+            {
               if(it!=path.end())  //If you're not at the end of the path, go the next point
               {
                 GoalPose = (*it);
@@ -229,11 +232,14 @@ class TrajectoryPlotterNode
               }
               else                //Else, stop
               {
-                ROS_INFO("Goal Reached");
                 path.clear();
                 pathRecieved = false;
                 msg.angular.z = 0;
                 msg.linear.x = 0;
+		if(fabs(GoalPose.x-goalOfFinal.position.x)>LOOKAHEAD ||fabs(GoalPose.y-goalOfFinal.position.y)>LOOKAHEAD)
+		{
+		  goal_pub.publish(goalOfFinal);
+		}
               }
             }
             velocity_pub.publish(msg);
@@ -413,10 +419,12 @@ class TrajectoryPlotterNode
       odom_pub = n.advertise<nav_msgs::Odometry>("odom", 10);
       marker_pub = n.advertise<visualization_msgs::Marker>("goalmark", 10);
       path_sub = n.subscribe<nav_msgs::Path>("path", 1, boost::bind(&TrajectoryPlotterNode::pathCallback, this, _1));
+      goal_pub = n.advertise<geometry_msgs::Pose>("goal_post", 10);
+      goal_sub = n.subscribe<geometry_msgs::Pose>("goal_post", 10, boost::bind(&TrajectoryPlotterNode::goalCallback, this, _1));
       MotorInfo_sub = n.subscribe<drrobot_jaguar4x4_player::MotorInfoArray>("drrobot_motor", 1, boost::bind(&TrajectoryPlotterNode::motorCallback, this, _1));
+
     }
   //--------------------------------------Callback and publisher functions-------------------------------------------------//
-
   //Publishes a marker based on x and y
   void markerPub(const float & x, const float & y)
   {
@@ -461,14 +469,17 @@ class TrajectoryPlotterNode
     //Publishes the marker to 'goalmark'
     marker_pub.publish(mark);
   }
-
-  //Callback and publisher for backwards movement override when robot stall detected
-  void timerCallback(const ros::TimerEvent& e)
+  void goalCallback(const geometry_msgs::Pose::ConstPtr & goal)
   {
+	goalOfFinal = *goal;
+  }
+
+  void timerCallback(const ros::TimerEvent& e)
+ {
     static Pose2D currentPose;
+    currentPose = getCurrentPosition();
     if(pathRecieved == true)
     {
-      currentPose= getCurrentPosition();
       if(pastcurPose.checkSamePosition(currentPose))
       {
         ignorePath = true;
@@ -486,6 +497,7 @@ class TrajectoryPlotterNode
         msg.angular.z = M_PI/4;
         velocity_pub.publish(msg);
         ignorePath = false;
+	goal_pub.publish(goalOfFinal);
       }
     }
     pastcurPose = currentPose;
@@ -493,8 +505,7 @@ class TrajectoryPlotterNode
     //Callback function from "path"
     void pathCallback(const nav_msgs::Path::ConstPtr& pathmsg)
     {
-        if(pathRecieved == false)
-        {
+	       path.clear();
           for(int i =0; i<pathmsg->poses.size();i++)
           {
             Pose2D temp;
@@ -508,10 +519,8 @@ class TrajectoryPlotterNode
             GoalPose = (*it);
             it++;
           }
-          pathRecieved = true;
-
           cmd_velPublisher(GoalPose);
-        }
+	         pathRecieved = true;
     }
 
     //Callback function for odometry from "drrobot_motor"; converts encoder movement to Twist as "twistVel"
@@ -579,7 +588,7 @@ int main(int argc, char **argv)
   //Initializing
   ros::init(argc, argv, "drrobot_trajectory_plotter");
   TrajectoryPlotterNode DrRobotPlotterNode;
-  ros::AsyncSpinner spinner(3);
+  ros::AsyncSpinner spinner(4);
   spinner.start();
   ros::waitForShutdown();
   return 0;
