@@ -1,3 +1,14 @@
+/*
+
+Based on a path published by Trajectory_node (Thomas Vy), this node sends commands to a DrRobot driver program to follow a path.
+It also converts motor information from the same driver to odometry that can be sent to GMapping.
+
+Author: Noam Anglo; Thomas Vy
+Date: August 2018
+Email: noam.anglo@ucalgary.ca; thomas.vy@ucalgary.ca
+
+*/
+
 //-----------------------------------------Parameters and headers----------------------------------------------------------//
 
 //ROS
@@ -11,6 +22,7 @@
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Odometry.h>
+#include <visualization_msgs/Marker.h>
 
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
@@ -18,7 +30,6 @@
 #include <sstream>
 #include <iostream>
 
-#define LOOPRATE         10                 //Looprate
 
 #define WHEELRAD         0.083              //Radius of the wheel
 #define WHEELDIST        0.42               //Distance between the two wheels
@@ -29,7 +40,6 @@
 #define ENCODERCOUNT     376                //Number of encoder steps per full revolution
 #define MAXENCODER       32767              //Maximum encoder value
 #define ENCROLL          1000               //Encoder rollover threshold (just set it to something high)
-
 //-------------------------------------Node Class--------------------------------------------------------------------------//
 
 class TrajectoryPlotterNode
@@ -68,13 +78,13 @@ class TrajectoryPlotterNode
          }
          return *this;
        }
-       bool checkSamePosition (Pose2D & rhs)
+       bool checkSamePosition (Pose2D & rhs)    //Checks if previous position is the same as the current position - i.e. if robot stalled
        {
-         if(fabs(x-rhs.x)>LOOKAHEAD)
+         if(fabs(x-rhs.x)>0.001)
           return false;
-         if(fabs(y-rhs.y)>LOOKAHEAD)
+         if(fabs(y-rhs.y)>0.001)
           return false;
-         if(fabs(theta-rhs.theta)>0.02)
+         if(fabs(theta-rhs.theta)>0.01)
           return false;
         return true;
        }
@@ -122,6 +132,7 @@ class TrajectoryPlotterNode
     ros::NodeHandle n;
     ros::Publisher velocity_pub;
     ros::Publisher odom_pub;
+    ros::Publisher marker_pub;
     ros::Subscriber path_sub;
     ros::Subscriber MotorInfo_sub;
     ros::Timer timer;
@@ -171,12 +182,16 @@ class TrajectoryPlotterNode
         Pose2D currentPosition(transform.getOrigin().x(), transform.getOrigin().y(), tf::getYaw(transform.getRotation()));
         return currentPosition;
    }
+
     //Movement command publisher from A to B using 'Follow the Carrot' algorithm
+
+/* PI-control based function below
     void cmd_velPublisher(Pose2D & B)
       {
         if(pathRecieved == true && ignorePath == false)
         {
-	          Pose2D A = getCurrentPosition();
+
+	    Pose2D A = getCurrentPosition();
             static geometry_msgs::Twist msg;
             ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
             if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
@@ -184,17 +199,17 @@ class TrajectoryPlotterNode
               double angle = angleAB(A, B);
              if (fabs(angle)>0.040)           //If the robot isn't facing the next point, i.e. the angle error isn't 0...
               {
-                    ROS_INFO("Angle Difference:[%f]: ",angleAB(A, B));
+                    ROS_INFO("Angle Difference:[%f]: ",angle);
                 if (fabs(angle)>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
                 {
                    ROS_INFO("Rotating");
-                   msg.linear.x =0;
+                   msg.linear.x = 0;
                    msg.angular.z = angle/2;
                 }
                 else                                      //Else, rotate and move forward
                 {
                  ROS_INFO("Forward and rotating");
-                 msg.linear.x = 0.1;
+		 msg.linear.x=0.1;
                  msg.angular.z = angle;
                 }
               }
@@ -202,7 +217,7 @@ class TrajectoryPlotterNode
               {
                 ROS_INFO("Forward");
                 msg.linear.x = 0.1;
-                msg.angular.z = 0;
+                msg.angular.z =0;
               }
             }
             else                         //Else...
@@ -224,6 +239,72 @@ class TrajectoryPlotterNode
             velocity_pub.publish(msg);
       }
         ////ROS_INFO("Velocity message sent: [%f]", msg.linear.x);
+    }
+    */
+
+    //Movement command publisher from A to B using 'Follow the Carrot' algorithm, using PI control
+    void cmd_velPublisher(Pose2D & B)
+      {
+        if(pathRecieved == true && ignorePath == false)
+        {
+            markerPub(B.x, B.y);
+            Pose2D A = getCurrentPosition();
+            static geometry_msgs::Twist msg;
+            //ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
+            if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
+            {
+              double angle = angleAB(A, B);
+              double length = lengthAB (A,B);
+                    ROS_INFO("Angle Difference:[%f]: ", angle);
+                if (fabs(angle)>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
+                {
+                   ROS_INFO("Rotating");
+
+                   //lowers noise by damping deceleration a bit when previous velocity is above ~0
+                   if (msg.linear.x > 0.0001)
+                    {msg.linear.x -= 0.0025;}
+                   else
+                    {msg.linear.x = 0;}
+
+                    //PID-controlled angular velocity
+                    msg.angular.z = PIDVel(angle, 0.8, 0.005, 5, M_PI/3);
+                }
+
+                else                                      //Else, rotate and move forward
+                {
+                 ROS_INFO("Forward and rotating");
+
+                 //lowers noise by damping acceleration a bit when velocity is below 0.06 maximum
+                 if (msg.linear.x < 0.07)
+                  {msg.linear.x += 0.0025;}
+
+                 else
+                  {msg.linear.x = 0.07;}
+
+                  //PID-controlled angular velocity
+                  msg.angular.z = PIDVel(angle, 0.8, 0.005, 5, M_PI/3);
+                }
+              }
+            else                         //Else...
+            {
+              pastcurPose = curPose;
+              if(it!=path.end())  //If you're not at the end of the path, go the next point
+              {
+                GoalPose = (*it);
+                it++;
+              }
+              else                //Else, stop
+              {
+                ROS_INFO("Goal Reached");
+                path.clear();
+                pathRecieved = false;
+                msg.angular.z = 0;
+                msg.linear.x = 0;
+              }
+            }
+            ROS_INFO("Velocity message sent: [%f], [%f]", msg.linear.x, msg.angular.z);
+            velocity_pub.publish(msg);
+      }
     }
 
     //--------------------------------------Encoder Conversion Functions---------------------------------------------------//
@@ -266,13 +347,13 @@ class TrajectoryPlotterNode
         Pose.x += Twist.linear*cos(Pose.theta);
         Pose.y += Twist.linear*sin(Pose.theta);
         Pose.theta += Twist.angular;
-        if (Pose.theta < 0)                           //Keeps rotational pose positive
+        if (Pose.theta < 0)            //Keeps rotational pose positive
           Pose.theta += 2*M_PI;
 
         else if (Pose.theta >= 2*M_PI) //Keeps rotational pose below 360 degrees
            Pose.theta -= 2*M_PI;
 
-        ROS_INFO("curPose - X:[%f], Y:[%f], Theta:[%f]", Pose.x, Pose.y, Pose.theta);
+        //ROS_INFO("curPose - X:[%f], Y:[%f], Theta:[%f]", Pose.x, Pose.y, Pose.theta);
       }
 
 
@@ -319,7 +400,7 @@ class TrajectoryPlotterNode
     {
       static tf::TransformBroadcaster broadcaster;
       broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0.03,0,0.1)), currentTime, "base_link", "laser"));
-      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0.1)), currentTime, "laser", "scan"));
+      broadcaster.sendTransform(tf::StampedTransform(tf::Transform(tf::Quaternion(0,0,0,1), tf::Vector3(0,0,0)), currentTime, "laser", "scan"));
 
     }
 
@@ -329,20 +410,70 @@ class TrajectoryPlotterNode
       ignorePath = false;
       timer = n.createTimer(ros::Duration(5.0), boost::bind(&TrajectoryPlotterNode::timerCallback, this, _1));
       velocity_pub = n.advertise<geometry_msgs::Twist>("drrobot_cmd_vel", 10);
-      odom_pub = n.advertise<nav_msgs::Odometry>("odom",10);
+      odom_pub = n.advertise<nav_msgs::Odometry>("odom", 10);
+      marker_pub = n.advertise<visualization_msgs::Marker>("goalmark", 10);
       path_sub = n.subscribe<nav_msgs::Path>("path", 1, boost::bind(&TrajectoryPlotterNode::pathCallback, this, _1));
       MotorInfo_sub = n.subscribe<drrobot_jaguar4x4_player::MotorInfoArray>("drrobot_motor", 1, boost::bind(&TrajectoryPlotterNode::motorCallback, this, _1));
     }
   //--------------------------------------Callback and publisher functions-------------------------------------------------//
+
+  //Publishes a marker based on x and y
+  void markerPub(const float & x, const float & y)
+  {
+    static int i = 0;
+
+    //Initializing stuff
+    visualization_msgs::Marker mark;
+    mark.header.frame_id = "map";
+    mark.header.stamp = ros::Time();
+    mark.ns = "m_ns";
+    mark.id = i;
+
+    //Marker type
+    mark.type = visualization_msgs::Marker::CUBE;
+    mark.action = visualization_msgs::Marker::ADD;
+
+    //Marker pose
+    mark.pose.position.x = x;
+    mark.pose.position.y = y;
+    mark.pose.position.z = 0.05;
+
+    //Marker orientation
+    mark.pose.orientation.x = 0;
+    mark.pose.orientation.y = 0;
+    mark.pose.orientation.z = 0;
+    mark.pose.orientation.w = 0;
+
+    //Marker scale
+    mark.scale.x = 0.05;
+    mark.scale.y = 0.05;
+    mark.scale.z = 0.1;
+
+    //Marker alpha and color
+    mark.color.a = 0.8;
+    mark.color.r = 1.0;
+    mark.color.g = 0;
+    mark.color.b = 0.5;
+
+    i++;
+
+
+    //Publishes the marker to 'goalmark'
+    marker_pub.publish(mark);
+  }
+
+  //Callback and publisher for backwards movement override when robot stall detected
   void timerCallback(const ros::TimerEvent& e)
   {
+    static Pose2D currentPose;
     if(pathRecieved == true)
     {
-      if(curPose.checkSamePosition(pastcurPose))
+      currentPose= getCurrentPosition();
+      if(pastcurPose.checkSamePosition(currentPose))
       {
         ignorePath = true;
+	path.clear();
         pathRecieved = false;
-        path.clear();
         geometry_msgs::Twist msg;
         ros::Time start = ros::Time::now();
         ros::Duration timeout(2.0);
@@ -357,12 +488,12 @@ class TrajectoryPlotterNode
         ignorePath = false;
       }
     }
-    pastcurPose = curPose;
+    pastcurPose = currentPose;
   }
     //Callback function from "path"
     void pathCallback(const nav_msgs::Path::ConstPtr& pathmsg)
     {
-        if(pathRecieved == false && ignorePath == false)
+        if(pathRecieved == false)
         {
           for(int i =0; i<pathmsg->poses.size();i++)
           {
@@ -373,11 +504,12 @@ class TrajectoryPlotterNode
           }
           it = path.begin();
           if(it!=path.end())
-          {
+          {//PID-controlled angular velocity
             GoalPose = (*it);
             it++;
           }
           pathRecieved = true;
+
           cmd_velPublisher(GoalPose);
         }
     }
@@ -385,16 +517,19 @@ class TrajectoryPlotterNode
     //Callback function for odometry from "drrobot_motor"; converts encoder movement to Twist as "twistVel"
     void motorCallback(const drrobot_jaguar4x4_player::MotorInfoArray::ConstPtr& odommsg)
     {
+      //Declaring + storing previous encoder value and initializing delta
       static Encoder prev(odommsg->motorInfos[0].encoder_pos,odommsg->motorInfos[1].encoder_pos);
       Encoder Delta;
 
             ////ROS_INFO("Raw wheel movement: [%d] left, [%d] right", odommsg->motorInfos[0].encoder_pos, odommsg->motorInfos[1].encoder_pos);
 
+      //Finding change in encoder position
       Delta.left = RollRemover((odommsg->motorInfos[0].encoder_pos-prev.left));
       Delta.right = -RollRemover((odommsg->motorInfos[1].encoder_pos-prev.right)); //Negative to account for right encoder being reversed
 
             ////ROS_INFO("Wheel movement: [%d] left, [%d] right", Delta.left, Delta.right);
 
+      //Storing a new previous encoder value after doing calculations
       prev.left = odommsg->motorInfos[0].encoder_pos;
       prev.right = odommsg->motorInfos[1].encoder_pos;
 
@@ -403,6 +538,38 @@ class TrajectoryPlotterNode
 
       //Publish function for movement command; publishes to "drrobot_cmd_vel"
       cmd_velPublisher(GoalPose);
+    }
+
+//--------------------------------------PI Controller (thanks Wescott Design Services)-----------------------------------------//
+    float PIDVel(const float & proErr, const float & Kp, const float & Ki, const float & Kd, const float & maxComm) //(Error, prop. gain, int. gain, deriv. gain, maximum allowable command value)
+    {
+      //Defining proportional term
+      float pTerm = Kp*proErr;
+
+      //Finding integral value
+      static float intErr = 0;
+      intErr += proErr;
+
+      //Anti-windup
+      if (intErr > 0.1*maxComm/Ki)
+        intErr = 0.1*maxComm/Ki;
+      else if (intErr < -0.1*maxComm/Ki)
+        intErr = -0.1*maxComm/Ki;
+
+      //Defining integral term
+      float iTerm = Ki*intErr;
+
+      //Tsettle, a and previous error for bandlimited derivative term
+      static float Tsettle = 1;
+      static float a = 1-1/(Tsettle*50);
+      static float prevErr;
+
+      //Defining the derivative term and previous error
+      float dTerm = Kd*(1-a)*(proErr - prevErr);
+      prevErr = a*prevErr+(1-a)*(proErr);
+
+      ROS_INFO("pTerm: [%f], iTerm:[%f], dTerm: [%f]", pTerm, iTerm, dTerm);
+      return (pTerm + iTerm);
     }
 };
 //--------------------------------------Main-------------------------------------------------------------------------------//

@@ -93,6 +93,7 @@ Publishes to (name / type):
 #define MOTOR_NUM       6
 #define IR_NUM          10
 #define US_NUM          6
+
 using namespace std;
 using namespace DrRobot_MotionSensorDriver;
 
@@ -285,6 +286,7 @@ public:
           powerInfo_pub_.publish(powerInfo);
         }
       }
+
       if (drrobotMotionDriver_->portOpen())
       {
         drrobotMotionDriver_->readMotorSensorData(&motorSensorData_);
@@ -356,7 +358,7 @@ public:
 
 		      ir_pub_.publish(rangerArray);
 	     }
-*/         
+*/
 
               drrobot_jaguar4x4_player::StandardSensor standardSensor;
               standardSensor.humanSensorData.resize(4);

@@ -78,6 +78,31 @@ Subscribes to (name/type):
  *  @param[in] msg  is a pointer of MotorInfoArray message, the array size should be 6
  *  @return null
  */
+
+ //Added function to convert voltage to battery percentage
+ short voltToPercent(const float & min, const float & max, const float & volt)
+ {
+   static int count = 0;
+   static float voltSum = 0;
+   static float percent = 0;
+
+   voltSum += volt;
+   count++;
+
+   //If counter reaches some value, change percent value
+   if (count >= 250)
+   {
+     percent = voltSum/count;
+     voltSum = 0;
+     count = 0;
+     percent = (percent-min)/(max-min)*100;
+   }
+
+   //Returns as integer percentage
+
+   return short(percent+0.5);
+ }
+
 void motorSensorCallback(const drrobot_jaguar4x4_player::MotorInfoArray::ConstPtr& msg)
 {
   int msgSize = msg->motorInfos.capacity();
@@ -129,7 +154,6 @@ void usSensorCallback(const drrobot_jaguar4x4_player::RangeArray::ConstPtr& msg)
 
 }
 
-
 /*! \brief
  *      This call back function is for StandardSensor message
  *  @param[in] msg  is a pointer of StandardSensor message
@@ -160,9 +184,18 @@ void standardSensorCallback(const drrobot_jaguar4x4_player::StandardSensor::Cons
 void powerSensorCallback(const drrobot_jaguar4x4_player::PowerInfo::ConstPtr& msg)
 {
 
-  ROS_INFO("|| Battery 1 Voltage: [%2.2f V]", msg->bat1_vol);
-  ROS_INFO("|| Battery 2 Voltage: [%2.2f V]", msg->bat2_vol);
-  ROS_INFO("|| DCIN Power Voltage: [%2.2f V]", msg->dcin_vol);
+  ROS_DEBUG("|| Battery 1 Voltage: [%2.1f V]", msg->bat1_vol);
+  ROS_DEBUG("|| Battery 2 Voltage: [%2.1f V]", msg->bat2_vol);
+  //Modified to display percentages as well; range changes depending on if it's charging or not
+  if (msg->power_status == 0)   //Not charging
+    {
+      ROS_INFO("|| Battery Av. Voltage: [%2.1f V] - [%d%%] - Not Charging", (msg->bat2_vol+msg->bat1_vol)/2, voltToPercent(10.5, 17.5, (msg->bat2_vol+msg->bat1_vol)/2));
+    }
+  else                          //Charging
+    {
+      ROS_INFO("|| Battery Av. Voltage: [%2.1f V] - [%d%%] - Charging", (msg->bat2_vol+msg->bat1_vol)/2, voltToPercent(15.5, 19, (msg->bat2_vol+msg->bat1_vol)/2));
+      ROS_INFO("|| DCIN Power Voltage: [%2.2f V] - [%2.1f%%] Deviation", msg->dcin_vol, (msg->dcin_vol-22)/(22)*100);   //Deviation is the percent difference from the standard charge voltage (~22V)
+    }
 
   ROS_DEBUG("Battery 1 Temperature Sensor: [%2.2f C]", msg->bat1_temp/100);
   ROS_DEBUG("Battery 2 Temperature Sensor: [%2.2f C]", msg->bat2_temp/100);
