@@ -1,8 +1,0 @@
-<launch>
-  <group ns="drrobot_player1">
-    <rosparam file="$(find drrobot_jaguar4x4_player)/drrobotplayer_H20.yaml" command="load"/>
-    <node pkg="drrobot_jaguar4x4_player" name="drrobot_player" type="drrobot_player" output="screen"/>
-    <node pkg="drrobot_jaguar4x4_player" name="drrobotMsgTester" type="drrobotMsgTester" output="screen"/>
-  </group>
-</launch>
-

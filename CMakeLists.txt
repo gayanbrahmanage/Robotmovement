@@ -223,8 +223,8 @@ target_link_libraries(drrobot_player_joystick ${catkin_LIBRARIES})
 add_executable(drrobot_player_stock src/drrobot_player_stock.cpp)
 target_link_libraries(drrobot_player_stock ${catkin_LIBRARIES})
 
-add_executable(drrobot_trajectory_plotter src/drrobot_trajectory_plotter.cpp)
-target_link_libraries(drrobot_trajectory_plotter ${catkin_LIBRARIES})
+add_executable(drrobot_path_follower src/drrobot_path_follower.cpp)
+target_link_libraries(drrobot_path_follower ${catkin_LIBRARIES})
 
 #Noam added these
 

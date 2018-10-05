@@ -35,7 +35,7 @@ Email: noam.anglo@ucalgary.ca; thomas.vy@ucalgary.ca
 #define WHEELDIST        0.42               //Distance between the two wheels
 #define WHEELWIDTH       0.036              //Width of individual wheels
 
-#define LOOKAHEAD        0.06               //Lookahead distance
+#define LOOKAHEAD        0.17               //Distance from current goal before robot changes to next goal
 
 #define ENCODERCOUNT     376                //Number of encoder steps per full revolution
 #define MAXENCODER       32767              //Maximum encoder value
@@ -148,6 +148,15 @@ class TrajectoryPlotterNode
     ros::Time currentTime = ros::Time::now(); //Time
     tf::TransformListener tflistener;
     geometry_msgs::Pose goalOfFinal;
+
+    //Parameters
+    double speedMax;
+    double speedInterval;
+    double angleP;
+    double angleI;
+    double angleD;
+    double maxIVal;
+
   private: // private methods
   //--------------------------------------Geometry Functions---------------------------------------------------//
 
@@ -161,10 +170,10 @@ class TrajectoryPlotterNode
     double angleAB(Pose2D & A, Pose2D & B)
     {
         double goalangle = atan2((B.y-A.y),(B.x-A.x));
-        if(goalangle<0)
+    if(goalangle<0)
 			goalangle += 2*M_PI;
         double onedir = goalangle - A.theta;
-        if(onedir >M_PI)
+    if(onedir >M_PI)
 			onedir -= 2*M_PI;
 		else if (onedir<-M_PI)
 			onedir += 2*M_PI;
@@ -188,66 +197,6 @@ class TrajectoryPlotterNode
 
     //Movement command publisher from A to B using 'Follow the Carrot' algorithm
 
-/* PI-control based function below
-    void cmd_velPublisher(Pose2D & B)
-      {
-        if(pathRecieved == true && ignorePath == false)
-        {
-
-	    Pose2D A = getCurrentPosition();
-            static geometry_msgs::Twist msg;
-            ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
-            if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
-            {
-              double angle = angleAB(A, B);
-             if (fabs(angle)>0.040)           //If the robot isn't facing the next point, i.e. the angle error isn't 0...
-              {
-                    ROS_INFO("Angle Difference:[%f]: ",angle);
-                if (fabs(angle)>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
-                {
-                   ROS_INFO("Rotating");
-                   msg.linear.x = 0;
-                   msg.angular.z = angle/2;
-                }
-                else                                      //Else, rotate and move forward
-                {
-                 ROS_INFO("Forward and rotating");
-		 msg.linear.x=0.1;
-                 msg.angular.z = angle;
-                }
-              }
-              else                         //Else, don't rotate
-              {
-                ROS_INFO("Forward");
-                msg.linear.x = 0.1;
-                msg.angular.z =0;
-              }
-            }
-            else                         //Else...
-            {
-              if(it!=path.end())  //If you're not at the end of the path, go the next point
-              {
-                GoalPose = (*it);
-                it++;
-              }
-              else                //Else, stop
-              {
-                path.clear();
-                pathRecieved = false;
-                msg.angular.z = 0;
-                msg.linear.x = 0;
-		if(fabs(GoalPose.x-goalOfFinal.position.x)>LOOKAHEAD ||fabs(GoalPose.y-goalOfFinal.position.y)>LOOKAHEAD)
-		{
-		  goal_pub.publish(goalOfFinal);
-		}
-              }
-            }
-            velocity_pub.publish(msg);
-      }
-        ////ROS_INFO("Velocity message sent: [%f]", msg.linear.x);
-    }
-    */
-
     //Movement command publisher from A to B using 'Follow the Carrot' algorithm, using PI control
     void cmd_velPublisher(Pose2D & B)
       {
@@ -259,21 +208,22 @@ class TrajectoryPlotterNode
             //ROS_INFO("Distance from GoalPose - [%f], GoalPose Coordinates - X: [%f], Y: [%f]", lengthAB(A, B), B.x, B.y);
             if(lengthAB(A, B)>LOOKAHEAD) //If the look-ahead distance hasn't been reached...
             {
+              //A
               double angle = angleAB(A, B);
               double length = lengthAB (A,B);
-                    ROS_INFO("Angle Difference:[%f]: ", angle);
+              ROS_INFO("Angle Difference:[%f]: ", angle);
+
                 if (fabs(angle)>M_PI/4)           //If the angle is greater than 45 degrees, rotate but don't move forward
                 {
                    ROS_INFO("Rotating");
-
                    //lowers noise by damping deceleration a bit when previous velocity is above ~0
                    if (msg.linear.x > 0.0001)
-                    {msg.linear.x -= 0.0025;}
+                    {msg.linear.x -= speedMax/speedInterval;}
                    else
                     {msg.linear.x = 0;}
 
                     //PID-controlled angular velocity
-                    msg.angular.z = PIDVel(angle, 0.8, 0.005, 5, M_PI/3);
+                    msg.angular.z = PIDVel(angle, angleP, angleI, angleD, maxIVal);
                 }
 
                 else                                      //Else, rotate and move forward
@@ -281,14 +231,14 @@ class TrajectoryPlotterNode
                  ROS_INFO("Forward and rotating");
 
                  //lowers noise by damping acceleration a bit when velocity is below 0.06 maximum
-                 if (msg.linear.x < 0.07)
-                  {msg.linear.x += 0.0025;}
+                 if (msg.linear.x < speedMax)
+                  {msg.linear.x += speedMax/speedInterval;}
 
                  else
-                  {msg.linear.x = 0.07;}
+                  {msg.linear.x = speedMax;}
 
                   //PID-controlled angular velocity
-                  msg.angular.z = PIDVel(angle, 0.8, 0.005, 5, M_PI/3);
+                  msg.angular.z = PIDVel(angle, angleP, angleI, angleD, maxIVal);
                 }
               }
             else                         //Else...
@@ -359,10 +309,8 @@ class TrajectoryPlotterNode
         else if (Pose.theta >= 2*M_PI) //Keeps rotational pose below 360 degrees
            Pose.theta -= 2*M_PI;
 
-        //ROS_INFO("curPose - X:[%f], Y:[%f], Theta:[%f]", Pose.x, Pose.y, Pose.theta);
+           ////ROS_INFO("curPose - X:[%f], Y:[%f], Theta:[%f]", Pose.x, Pose.y, Pose.theta);
       }
-
-
 
   //-------------------------------------------Transform functions---------------------------------------------------------//
       //Publishes odometry to topic "odom"
@@ -381,18 +329,18 @@ class TrajectoryPlotterNode
       odom_trans.transform.rotation = tf::createQuaternionMsgFromYaw(curPose.theta);
       odom_broadcaster.sendTransform(odom_trans);
 
-      //publishing the odometry message
+      //Publishing the odometry message
       nav_msgs::Odometry odom;
       odom.header.stamp = currentTime;
       odom.header.frame_id = "odom";
 
-      //position
+      //Position
       odom.pose.pose.position.x = curPose.x;
       odom.pose.pose.position.y = curPose.y;
       odom.pose.pose.position.z = 0;
       odom.pose.pose.orientation = tf::createQuaternionMsgFromYaw(curPose.theta);
 
-      //velocity
+      //Velocity
       odom.child_frame_id = "base_link";
       odom.twist.twist.linear.x = twistVel.linear;;
       odom.twist.twist.linear.y = 0;
@@ -423,10 +371,22 @@ class TrajectoryPlotterNode
       goal_sub = n.subscribe<geometry_msgs::Pose>("goal_post", 10, boost::bind(&TrajectoryPlotterNode::goalCallback, this, _1));
       MotorInfo_sub = n.subscribe<drrobot_jaguar4x4_player::MotorInfoArray>("drrobot_motor", 1, boost::bind(&TrajectoryPlotterNode::motorCallback, this, _1));
 
+      //PID parameters
+
+      ros::NodeHandle pnh("~");
+
+      pnh.param<double>("/speedMax", speedMax, 0.08);
+      pnh.param<double>("/speedInterval", 64);
+      pnh.param<double>("/angularP", angleP, 0.6);
+      pnh.param<double>("/angularI", angleI, 0.005);
+      pnh.param<double>("/angularD", angleD, 10);
+      pnh.param<double>("/maxIVal", maxIVal, M_PI/5);
+
+      ////ROS_INFO("PID parameters received: [%f, %f, %f, %f]", angleP, angleI, angleD, maxIVal);
     }
   //--------------------------------------Callback and publisher functions-------------------------------------------------//
   //Publishes a marker based on x and y
-  void markerPub(const float & x, const float & y)
+  void markerPub(const double & x, const double & y)
   {
     static int i = 0;
 
@@ -464,7 +424,6 @@ class TrajectoryPlotterNode
     mark.color.b = 0.5;
 
     i++;
-
 
     //Publishes the marker to 'goalmark'
     marker_pub.publish(mark);
@@ -550,31 +509,33 @@ class TrajectoryPlotterNode
     }
 
 //--------------------------------------PI Controller (thanks Wescott Design Services)-----------------------------------------//
-    float PIDVel(const float & proErr, const float & Kp, const float & Ki, const float & Kd, const float & maxComm) //(Error, prop. gain, int. gain, deriv. gain, maximum allowable command value)
+    double PIDVel(const double & proErr, const double & Kp, const double & Ki, const double & Kd, const double & maxComm) //(Error, prop. gain, int. gain, deriv. gain, maximum allowable command value)
     {
       //Defining proportional term
-      float pTerm = Kp*proErr;
+      double pTerm = Kp*proErr;
 
       //Finding integral value
-      static float intErr = 0;
+      static double intErr = 0;
       intErr += proErr;
 
       //Anti-windup
-      if (intErr > 0.1*maxComm/Ki)
-        intErr = 0.1*maxComm/Ki;
-      else if (intErr < -0.1*maxComm/Ki)
-        intErr = -0.1*maxComm/Ki;
+      static const double windupCoeff = 0.1;
+      if (intErr > windupCoeff*maxComm/Ki)
+        intErr = windupCoeff*maxComm/Ki;
+      else if (intErr < -windupCoeff*maxComm/Ki)
+        intErr = -windupCoeff*maxComm/Ki;
 
       //Defining integral term
-      float iTerm = Ki*intErr;
+      double iTerm = Ki*intErr;
 
       //Tsettle, a and previous error for bandlimited derivative term
-      static float Tsettle = 1;
-      static float a = 1-1/(Tsettle*50);
-      static float prevErr;
+      static const double Tsettle = 1;
+      static const double sampleRate = 50;
+      static double a = 1-1/(Tsettle*50);
+      static double prevErr;
 
       //Defining the derivative term and previous error
-      float dTerm = Kd*(1-a)*(proErr - prevErr);
+      double dTerm = Kd*(1-a)*(proErr - prevErr);
       prevErr = a*prevErr+(1-a)*(proErr);
 
       ROS_INFO("pTerm: [%f], iTerm:[%f], dTerm: [%f]", pTerm, iTerm, dTerm);

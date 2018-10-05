@@ -2,14 +2,14 @@
     <node pkg="gmapping" name="gmapping" type="slam_gmapping" output="screen">
      <rosparam>
        map_update_interval: 2.0
-       linearUpdate: 0.3
-       angularUpdate: 0.25
-       delta: 0.05
-       particles: 30
-       xmin: -10
-       ymin: -10
-       xmax: 10
-       ymax: 10
+       linearUpdate: 0.2
+       angularUpdate: 0.2
+       delta: 0.04
+       particles: 50
+       xmin: -40
+       ymin: -40
+       xmax: 40
+       ymax: 40
 
 
      </rosparam>
